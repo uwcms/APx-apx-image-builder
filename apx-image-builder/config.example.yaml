@@ -1,0 +1,51 @@
+---
+# The working directory.
+# All relative paths will be relative to this.
+# Default './'
+working_directory: ./
+
+# If working_directory is a relative path, should it be made relative to the
+# location of this config file, instead of where the script was invoked from?
+# WARNING: Symlinks will be resolved.
+# Default: false
+working_directory_config_relative: true
+
+# User sources directory.
+# All sources will be pulled from a subdirectory if this folder with the name of
+# the builder.
+# Default: './'
+sources_directory: './'
+
+# Build directory.
+# All work will be done in subdirectories of this folder.
+# Subdirectories will be created for each builder.
+# WARNING: Subdirectories will be deleted by cleanup operations.
+# Default: './build'
+build_directory: ./build
+
+# Output directory.
+# Subdirectories will be created for each builder.
+# WARNING: Subdirectories will be deleted by cleanup operations.
+# Default: './output'
+output_directory: ./output
+
+# Builder-specific configuration.
+builders:
+  kernel:
+    # The url to fetch the kernel source tarball.
+    # file://... is valid.
+    #kernel_sourceurl: '...'
+
+    # The Xilinx Linux Kernel source tag to fetch.
+    # Ignored if kernel_sourceurl is set.
+    kernel_tag: xilinx-v2020.2
+
+    # This defines what build profile to use for the kernel.
+    #   'arm':    Build for ZYNQ-7000 with default compiler.
+    #   'arm64':  Build for ZynqMP with default compiler.
+    #   'custom': Use custom settings.  You must supply ARCH= and CROSS_COMPILE= in extra_kbuild_args.
+    profile: arm64
+
+    # Extra arguments to add to *ALL* kbuild invocations.
+    # This is normally empty.
+    extra_kbuild_args: ['-j8']
