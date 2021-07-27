@@ -1,21 +1,12 @@
 import argparse
-import filecmp
 import hashlib
-import io
-import itertools
 import logging
 import os
-import shlex
 import shutil
 import subprocess
-import textwrap
-import time
 import urllib.parse
-from io import TextIOWrapper
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-from pkg_resources import require
+from typing import List, Optional
 
 from . import base
 

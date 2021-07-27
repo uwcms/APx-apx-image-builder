@@ -10,8 +10,8 @@ from .kernel import KernelBuilder
 # resolution.
 all_builders = [
     FSBLBuilder,
-	PMUBuilder,
-	ATFBuilder,
+    PMUBuilder,
+    ATFBuilder,
     DTBBuilder,
     KernelBuilder,
 ]

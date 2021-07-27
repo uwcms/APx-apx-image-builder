@@ -4,7 +4,7 @@ import os
 import shutil
 import textwrap
 from pathlib import Path
-from typing import (Any, Dict, Iterable, List, NamedTuple, Set, Tuple, cast)
+from typing import Any, Dict, Iterable, List, NamedTuple, Set, Tuple, cast
 
 import yaml
 

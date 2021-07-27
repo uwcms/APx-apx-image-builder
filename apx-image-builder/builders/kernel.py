@@ -1,5 +1,4 @@
 import argparse
-import filecmp
 import hashlib
 import itertools
 import logging
@@ -11,8 +10,6 @@ import time
 import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-from pkg_resources import require
 
 from . import base
 
