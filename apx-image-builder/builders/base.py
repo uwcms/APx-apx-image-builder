@@ -164,7 +164,7 @@ class BaseBuilder(object):
 		PATHS.output.mkdir(parents=True, exist_ok=True)
 
 
-def FAIL(logger: logging.Logger, message: str, source: Optional[Exception] = None) -> NoReturn:
+def fail(logger: logging.Logger, message: str, source: Optional[Exception] = None) -> NoReturn:
 	logger.error(message)
 	if source is not None:
 		logger.debug('From exception: ' + str(source))
@@ -174,7 +174,7 @@ def FAIL(logger: logging.Logger, message: str, source: Optional[Exception] = Non
 StrOrBytesPath = Union[str, bytes, Path]  # Hacked from python typeshed
 
 
-def RUN(
+def run(
     PATHS: BuildPaths,
     LOGGER: logging.Logger,
     cmdargs: Union[StrOrBytesPath, Sequence[StrOrBytesPath]],
@@ -205,10 +205,10 @@ def RUN(
 		)
 	assert kwargs.get(
 	    'stderr', None
-	) is not subprocess.PIPE, "RUN() helper cannot take stderr=subprocess.PIPE, consider subprocess.STDOUT or a file"
-	assert kwargs.get('encoding', None) is None, 'RUN() helper cannot take nonbinary output'
-	assert kwargs.get('errors', None) is None, 'RUN() helper cannot take nonbinary output'
-	assert kwargs.get('univeral_newlines', False) is False, 'RUN() helper cannot take nonbinary output'
+	) is not subprocess.PIPE, "run() helper cannot take stderr=subprocess.PIPE, consider subprocess.STDOUT or a file"
+	assert kwargs.get('encoding', None) is None, 'run() helper cannot take nonbinary output'
+	assert kwargs.get('errors', None) is None, 'run() helper cannot take nonbinary output'
+	assert kwargs.get('univeral_newlines', False) is False, 'run() helper cannot take nonbinary output'
 
 	tmpoutfn: Optional[str] = None
 	tmpoutfile: Optional[IO[bytes]] = None
@@ -254,7 +254,7 @@ def RUN(
 	return (ret, stdout)
 
 
-def HASH_FILE(algo: str, file: IO[bytes], block_size=16386):
+def hash_file(algo: str, file: IO[bytes], block_size=16386):
 	h = hashlib.new(algo)
 	while True:
 		data = file.read(block_size)
@@ -288,3 +288,38 @@ class JSONStateFile(object):
 
 	def __exit__(self, exc_type, exc_value, traceback):
 		self.save()
+
+
+def check_bypass(
+    STAGE: Stage,
+    PATHS: BuildPaths,
+    LOGGER: logging.Logger,
+    *,
+    extract: bool = True,
+    bypass_file: Optional[Union[str, Path]] = None
+) -> bool:
+	if bypass_file is None:
+		bypass_file = '{builder_name}.bypass.tbz2'.format(builder_name=STAGE.builder.NAME)
+	bypass_file = PATHS.user_sources / bypass_file
+	if not bypass_file.exists():
+		return False
+	LOGGER.info('The ' + STAGE.builder.NAME + ' builder is bypassed.  Using pre-generated outputs.')
+	bypass_canary = PATHS.output / '.bypassed'
+	if extract:
+		stb = None
+		stt = None
+		try:
+			stb = bypass_file.stat()
+			stt = bypass_canary.stat()
+		except Exception:
+			pass
+		if stb is not None and stt is not None and stb.st_mtime < stt.st_mtime and stb.st_ctime < stt.st_ctime:
+			LOGGER.debug('Pre-generated outputs have already been extracted.')
+			extract = False
+	if extract:
+		LOGGER.info('Extracting pre-generated outputs.')
+		shutil.rmtree(PATHS.output, ignore_errors=True)
+		PATHS.output.mkdir()
+		run(PATHS, LOGGER, ['tar', '-xf', bypass_file, '-C', PATHS.output])
+		bypass_canary.touch()
+	return True

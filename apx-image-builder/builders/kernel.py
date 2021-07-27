@@ -98,6 +98,9 @@ file will be output as kernel.config.built.
 		self.STAGES['build'] = base.Stage(self, 'build', self.check, self.build, requires=[self.NAME + ':olddefconfig'])
 
 	def check(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> bool:
+		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
+			return True  # We're bypassed.  Our checks don't matter.
+
 		if self.statefile is None:
 			self.statefile = base.JSONStateFile(PATHS.build / '.state.json')
 
@@ -157,6 +160,9 @@ file will be output as kernel.config.built.
 		return check_ok
 
 	def fetch(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
 		assert self.statefile is not None
 		sourceurl: Optional[str] = self.BUILDER_CONFIG.get('kernel_sourceurl', None)
 		if sourceurl is None:
@@ -174,10 +180,10 @@ file will be output as kernel.config.built.
 				try:
 					shutil.copyfile(parsed_sourceurl.path, tarfile, follow_symlinks=True)
 				except Exception as e:
-					base.FAIL(LOGGER, 'Unable to copy kernel source tarball', e)
+					base.fail(LOGGER, 'Unable to copy kernel source tarball', e)
 			else:
 				try:
-					base.RUN(
+					base.run(
 					    PATHS,
 					    LOGGER,
 					    ['wget', '-O', tarfile, sourceurl],
@@ -190,7 +196,7 @@ file will be output as kernel.config.built.
 						tarfile.unlink()
 					except:
 						pass
-					base.FAIL(LOGGER, 'Unable to download kernel source tarball')
+					base.fail(LOGGER, 'Unable to download kernel source tarball')
 		chosen_source = PATHS.build / 'linux.tar.gz'
 		if chosen_source.resolve() != tarfile.resolve():
 			LOGGER.info('Selected new source, forcing new `prepare`.')
@@ -204,6 +210,9 @@ file will be output as kernel.config.built.
 		LOGGER.debug('Selected source ' + str(tarfile.name))
 
 	def prepare(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
 		assert self.statefile is not None
 		linuxdir = PATHS.build / 'linux'
 		if self.statefile.state.get('tree_ready', False):
@@ -214,9 +223,9 @@ file will be output as kernel.config.built.
 			LOGGER.info('Extracting the linux source tree.')
 			linuxdir.mkdir()
 			try:
-				base.RUN(PATHS, LOGGER, ['tar', '-xf', str(PATHS.build / 'linux.tar.gz'), '-C', str(linuxdir)])
+				base.run(PATHS, LOGGER, ['tar', '-xf', str(PATHS.build / 'linux.tar.gz'), '-C', str(linuxdir)])
 			except subprocess.CalledProcessError:
-				base.FAIL(LOGGER, 'Unable to extract kernel source tarball')
+				base.fail(LOGGER, 'Unable to extract kernel source tarball')
 			while True:
 				subdirs = [x for x in linuxdir.glob('*') if x.is_dir()]
 				if len(subdirs) == 1 and not (linuxdir / 'Makefile').exists():
@@ -231,7 +240,7 @@ file will be output as kernel.config.built.
 						linuxdir.rmdir()
 						os.rename(Path(str(linuxdir) + '~'), linuxdir)
 					except Exception as e:
-						base.FAIL(LOGGER, 'Unable to relocate linux source subdirectory.', e)
+						base.fail(LOGGER, 'Unable to relocate linux source subdirectory.', e)
 				else:
 					break
 			with self.statefile as state:
@@ -242,7 +251,7 @@ file will be output as kernel.config.built.
 		if not configfile.exists():
 			LOGGER.warning('No source file named "kernel.config".')
 		else:
-			user_config_hash = base.HASH_FILE('sha256', open(configfile, 'rb')).hexdigest()
+			user_config_hash = base.hash_file('sha256', open(configfile, 'rb')).hexdigest()
 			if self.statefile.state.get('user_config_hash', None) == user_config_hash:
 				LOGGER.info('The user config file has not changed.')
 			else:
@@ -252,19 +261,22 @@ file will be output as kernel.config.built.
 					try:
 						shutil.copyfile(configfile, linuxdir / '.config')
 					except Exception as e:
-						base.FAIL(LOGGER, 'Unable to copy kernel.config source file.', e)
+						base.fail(LOGGER, 'Unable to copy kernel.config source file.', e)
 					state['user_config_hash'] = user_config_hash
 
 			# Provide our kernel config as an output.
 			shutil.copyfile(linuxdir / '.config', PATHS.output / 'kernel.config')
 
 	def defconfig(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
 		linuxdir = PATHS.build / 'linux'
 		LOGGER.info('Running `defconfig`...')
 		try:
-			base.RUN(PATHS, LOGGER, ['make'] + self.kbuild_args + ['defconfig'], cwd=linuxdir)
+			base.run(PATHS, LOGGER, ['make'] + self.kbuild_args + ['defconfig'], cwd=linuxdir)
 		except subprocess.CalledProcessError:
-			base.FAIL(LOGGER, 'Kernel `defconfig` returned with an error')
+			base.fail(LOGGER, 'Kernel `defconfig` returned with an error')
 		LOGGER.info('Finished `defconfig`.')
 
 		# Provide our kernel config as an output.
@@ -274,16 +286,19 @@ file will be output as kernel.config.built.
 		)
 
 	def oldconfig(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
 		linuxdir = PATHS.build / 'linux'
 
 		if not (linuxdir / '.config').exists():
-			base.FAIL(LOGGER, 'No kernel configuration file was found.  Use kernel:defconfig to generate one.')
+			base.fail(LOGGER, 'No kernel configuration file was found.  Use kernel:defconfig to generate one.')
 
 		LOGGER.info('Running `oldconfig`...')
 		try:
-			base.RUN(PATHS, LOGGER, ['make'] + self.kbuild_args + ['oldconfig'], cwd=linuxdir)
+			base.run(PATHS, LOGGER, ['make'] + self.kbuild_args + ['oldconfig'], cwd=linuxdir)
 		except subprocess.CalledProcessError:
-			base.FAIL(LOGGER, 'Kernel `oldconfig` returned with an error')
+			base.fail(LOGGER, 'Kernel `oldconfig` returned with an error')
 		LOGGER.info('Finished `oldconfig`.')
 
 		# Provide our kernel config as an output.
@@ -293,14 +308,17 @@ file will be output as kernel.config.built.
 		)
 
 	def menuconfig(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
 		linuxdir = PATHS.build / 'linux'
 
 		if not (linuxdir / '.config').exists():
-			base.FAIL(LOGGER, 'No kernel configuration file was found.  Use kernel:defconfig to generate one.')
+			base.fail(LOGGER, 'No kernel configuration file was found.  Use kernel:defconfig to generate one.')
 
 		LOGGER.info('Running `menuconfig`...')
 		try:
-			base.RUN(
+			base.run(
 			    PATHS,
 			    LOGGER, ['make'] + self.kbuild_args + ['menuconfig'],
 			    cwd=linuxdir,
@@ -309,7 +327,7 @@ file will be output as kernel.config.built.
 			    stderr=None
 			)
 		except subprocess.CalledProcessError:
-			base.FAIL(LOGGER, 'Kernel `menuconfig` returned with an error')
+			base.fail(LOGGER, 'Kernel `menuconfig` returned with an error')
 		LOGGER.info('Finished `menuconfig`.')
 
 		# Provide our kernel config as an output.
@@ -319,29 +337,35 @@ file will be output as kernel.config.built.
 		)
 
 	def olddefconfig(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
 		assert self.statefile is not None
 		linuxdir = PATHS.build / 'linux'
 
 		if not (linuxdir / '.config').exists():
-			base.FAIL(LOGGER, 'No kernel configuration file was found.  Use kernel:defconfig to generate one.')
+			base.fail(LOGGER, 'No kernel configuration file was found.  Use kernel:defconfig to generate one.')
 
-		built_config_hash = base.HASH_FILE('sha256', open(linuxdir / '.config', 'rb')).hexdigest()
+		built_config_hash = base.hash_file('sha256', open(linuxdir / '.config', 'rb')).hexdigest()
 		if self.statefile.state.get('built_config_hash', None) == built_config_hash:
 			LOGGER.info('We have already run `olddefconfig` on this config file.')
 		else:
 			LOGGER.info('Running `olddefconfig` to ensure config consistency.')
 			try:
-				base.RUN(PATHS, LOGGER, ['make'] + self.kbuild_args + ['olddefconfig'], cwd=linuxdir)
+				base.run(PATHS, LOGGER, ['make'] + self.kbuild_args + ['olddefconfig'], cwd=linuxdir)
 			except subprocess.CalledProcessError:
-				base.FAIL(LOGGER, 'Kernel `olddefconfig` returned with an error')
+				base.fail(LOGGER, 'Kernel `olddefconfig` returned with an error')
 			LOGGER.info('Finished `olddefconfig`.')
 			with self.statefile as state:
-				state['built_config_hash'] = base.HASH_FILE('sha256', open(linuxdir / '.config', 'rb')).hexdigest()
+				state['built_config_hash'] = base.hash_file('sha256', open(linuxdir / '.config', 'rb')).hexdigest()
 
 		# Provide our final, used kernel config as an output, separate from the user-defined one.
 		shutil.copyfile(linuxdir / '.config', PATHS.output / 'kernel.config.built')
 
 	def build(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed. (And chose to extract back in `prepare`)
+
 		linuxdir = PATHS.build / 'linux'
 
 		for output in itertools.chain.from_iterable(
@@ -358,15 +382,15 @@ file will be output as kernel.config.built.
 			with open(PATHS.build / 'binkernel.spec', 'wb') as fd:
 				fd.write(specfile)
 		except ImportError as e:
-			base.FAIL(
+			base.fail(
 			    LOGGER,
 			    'The python pkg_resources module is not available, so we cannot access our bundled RPM spec file.'
 			)
 		LOGGER.info('Running `make`...')
 		try:
-			base.RUN(PATHS, LOGGER, ['make'] + self.kbuild_args, cwd=linuxdir)
+			base.run(PATHS, LOGGER, ['make'] + self.kbuild_args, cwd=linuxdir)
 		except subprocess.CalledProcessError:
-			base.FAIL(LOGGER, 'Kernel `make` returned with an error')
+			base.fail(LOGGER, 'Kernel `make` returned with an error')
 
 		# Provide vmlinux ELF as an output. (for JTAG boots)
 		shutil.copyfile(linuxdir / 'vmlinux', PATHS.output / 'vmlinux')
@@ -377,9 +401,9 @@ file will be output as kernel.config.built.
 		shutil.copyfile(PATHS.build / 'binkernel.spec', linuxdir / 'binkernel.spec')
 
 		LOGGER.debug('Identifying kernel release.')
-		kernelrelease = ''  # This will set the str type properly.  FAIL() below will ensure the value is set properly.
+		kernelrelease = ''  # This will set the str type properly.  fail() below will ensure the value is set properly.
 		try:
-			kernelrelease = base.RUN(
+			kernelrelease = base.run(
 			    PATHS,
 			    LOGGER, ['make', '-s'] + self.kbuild_args + ['kernelrelease'],
 			    cwd=linuxdir,
@@ -387,7 +411,7 @@ file will be output as kernel.config.built.
 			    OUTPUT_LOGLEVEL=logging.NOTSET
 			)[1].decode('utf8').strip()
 		except subprocess.CalledProcessError:
-			base.FAIL(LOGGER, 'Kernel `kernelrelease` returned with an error')
+			base.fail(LOGGER, 'Kernel `kernelrelease` returned with an error')
 		LOGGER.debug('Identified kernel release ' + kernelrelease)
 
 		rpmbuilddir = PATHS.build / 'rpmbuild'
@@ -407,9 +431,9 @@ file will be output as kernel.config.built.
 			    '-bb',
 			    'binkernel.spec',
 			]
-			base.RUN(PATHS, LOGGER, rpmcmd, cwd=linuxdir)
+			base.run(PATHS, LOGGER, rpmcmd, cwd=linuxdir)
 		except subprocess.CalledProcessError:
-			base.FAIL(LOGGER, 'rpmbuild returned with an error')
+			base.fail(LOGGER, 'rpmbuild returned with an error')
 		LOGGER.info('Finished rpmbuild.')
 
 		# Provide our rpms as an output. (for standard installation)
@@ -420,11 +444,14 @@ file will be output as kernel.config.built.
 		shutil.copyfile(linuxdir / '.config', PATHS.output / 'kernel.config.built')
 
 	def clean(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
+			return  # We're bypassed.
+
 		LOGGER.info('Running `mrproper`...')
 		try:
-			base.RUN(PATHS, LOGGER, ['make'] + self.kbuild_args + ['mrproper'], cwd=PATHS.build / 'linux')
+			base.run(PATHS, LOGGER, ['make'] + self.kbuild_args + ['mrproper'], cwd=PATHS.build / 'linux')
 		except subprocess.CalledProcessError:
-			base.FAIL(LOGGER, 'Kernel `mrproper` returned with an error')
+			base.fail(LOGGER, 'Kernel `mrproper` returned with an error')
 		LOGGER.info('Finished `mrproper`.')
 		LOGGER.info('Deleting outputs.')
 		shutil.rmtree(PATHS.output, ignore_errors=True)

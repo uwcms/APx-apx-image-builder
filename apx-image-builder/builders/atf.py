@@ -46,6 +46,9 @@ Stages available:
 		self.STAGES['build'] = base.Stage(self, 'build', self.check, self.build, requires=[self.NAME + ':prepare'])
 
 	def check(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> bool:
+		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
+			return True  # We're bypassed.
+
 		if self.statefile is None:
 			self.statefile = base.JSONStateFile(PATHS.build / '.state.json')
 
@@ -76,6 +79,9 @@ Stages available:
 		return check_ok
 
 	def fetch(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
 		assert self.statefile is not None
 		sourceurl: Optional[str] = self.BUILDER_CONFIG.get('atf_sourceurl', None)
 		if sourceurl is None:
@@ -93,10 +99,10 @@ Stages available:
 				try:
 					shutil.copyfile(parsed_sourceurl.path, tarfile, follow_symlinks=True)
 				except Exception as e:
-					base.FAIL(LOGGER, 'Unable to copy kernel source tarball', e)
+					base.fail(LOGGER, 'Unable to copy kernel source tarball', e)
 			else:
 				try:
-					base.RUN(
+					base.run(
 					    PATHS,
 					    LOGGER,
 					    ['wget', '-O', tarfile, sourceurl],
@@ -109,7 +115,7 @@ Stages available:
 						tarfile.unlink()
 					except:
 						pass
-					base.FAIL(LOGGER, 'Unable to download kernel source tarball')
+					base.fail(LOGGER, 'Unable to download kernel source tarball')
 		chosen_source = PATHS.build / 'atf.tar.gz'
 		if chosen_source.resolve() != tarfile.resolve():
 			LOGGER.info('Selected new source, forcing new `prepare`.')
@@ -123,6 +129,9 @@ Stages available:
 		LOGGER.debug('Selected source ' + str(tarfile.name))
 
 	def prepare(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
 		assert self.statefile is not None
 		atfdir = PATHS.build / 'atf'
 		if self.statefile.state.get('tree_ready', False):
@@ -133,9 +142,9 @@ Stages available:
 			LOGGER.info('Extracting the ATF source tree.')
 			atfdir.mkdir()
 			try:
-				base.RUN(PATHS, LOGGER, ['tar', '-xf', str(PATHS.build / 'atf.tar.gz'), '-C', str(atfdir)])
+				base.run(PATHS, LOGGER, ['tar', '-xf', str(PATHS.build / 'atf.tar.gz'), '-C', str(atfdir)])
 			except subprocess.CalledProcessError:
-				base.FAIL(LOGGER, 'Unable to extract ATF source tarball')
+				base.fail(LOGGER, 'Unable to extract ATF source tarball')
 			while True:
 				subdirs = [x for x in atfdir.glob('*') if x.is_dir()]
 				if len(subdirs) == 1 and not (atfdir / 'Makefile').exists():
@@ -150,32 +159,38 @@ Stages available:
 						atfdir.rmdir()
 						os.rename(Path(str(atfdir) + '~'), atfdir)
 					except Exception as e:
-						base.FAIL(LOGGER, 'Unable to relocate ATF source subdirectory.', e)
+						base.fail(LOGGER, 'Unable to relocate ATF source subdirectory.', e)
 				else:
 					break
 			with self.statefile as state:
 				state['tree_ready'] = True
 
 	def build(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
 		atfdir = PATHS.build / 'atf'
 		LOGGER.info('Running `make`...')
 		try:
-			base.RUN(PATHS, LOGGER, ['make'] + self.makeflags, cwd=atfdir)
+			base.run(PATHS, LOGGER, ['make'] + self.makeflags, cwd=atfdir)
 		except subprocess.CalledProcessError:
-			base.FAIL(LOGGER, '`make` returned with an error')
+			base.fail(LOGGER, '`make` returned with an error')
 
 		# Provide PMU firmware ELF as an output.
 		atf = atfdir / 'build/zynqmp/release/bl31/bl31.elf'
 		if not atf.exists():
-			base.FAIL(LOGGER, 'bl31.elf not found after build.')
+			base.fail(LOGGER, 'bl31.elf not found after build.')
 		shutil.copyfile(atf, PATHS.output / 'bl31.elf')
 
 	def clean(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
+			return  # We're bypassed.
+
 		LOGGER.info('Running `clean`...')
 		try:
-			base.RUN(PATHS, LOGGER, ['make', 'clean'], cwd=PATHS.build / 'workspace/pmufw')
+			base.run(PATHS, LOGGER, ['make', 'clean'], cwd=PATHS.build / 'workspace/pmufw')
 		except subprocess.CalledProcessError:
-			base.FAIL(LOGGER, '`clean` returned with an error')
+			base.fail(LOGGER, '`clean` returned with an error')
 		LOGGER.info('Finished `clean`.')
 		LOGGER.info('Deleting outputs.')
 		shutil.rmtree(PATHS.output, ignore_errors=True)

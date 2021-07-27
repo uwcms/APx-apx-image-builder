@@ -52,6 +52,9 @@ Stages available:
 		self.STAGES['build'] = base.Stage(self, 'build', self.check, self.build, requires=[self.NAME + ':prepare'])
 
 	def check(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> bool:
+		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
+			return True  # We're bypassed.
+
 		if self.statefile is None:
 			self.statefile = base.JSONStateFile(PATHS.build / '.state.json')
 
@@ -65,11 +68,14 @@ Stages available:
 		return check_ok
 
 	def prepare(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
 		assert self.statefile is not None
 		user_xsa = PATHS.user_sources / 'system.xsa'
 		if not user_xsa.exists():
-			base.FAIL(LOGGER, 'Unable to locate system.xsa in the sources directory.')
-		user_xsa_hash = base.HASH_FILE('sha256', open(user_xsa, 'rb')).hexdigest()
+			base.fail(LOGGER, 'Unable to locate system.xsa in the sources directory.')
+		user_xsa_hash = base.hash_file('sha256', open(user_xsa, 'rb')).hexdigest()
 		if self.statefile.state.get('xsa_hash', None) == user_xsa_hash:
 			LOGGER.info('The source system.xsa file has not changed.')
 		else:
@@ -95,7 +101,7 @@ Stages available:
 			).strip().format(**self.BUILDER_CONFIG)
 
 			try:
-				base.RUN(
+				base.run(
 				    PATHS,
 				    LOGGER,
 				    ['xsct'],
@@ -103,33 +109,39 @@ Stages available:
 				    cwd=PATHS.build / 'workspace',
 				)
 			except subprocess.CalledProcessError:
-				base.FAIL(LOGGER, 'Unable to generate PMU firmware project')
+				base.fail(LOGGER, 'Unable to generate PMU firmware project')
 			with self.statefile as state:
 				state['project_generated'] = True
 
 	def build(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
 		LOGGER.info('Running `make`...')
 		try:
-			base.RUN(
+			base.run(
 			    PATHS,
 			    LOGGER, ['make'] + self.BUILDER_CONFIG.get('extra_makeflags', []),
 			    cwd=PATHS.build / 'workspace' / 'pmufw'
 			)
 		except subprocess.CalledProcessError:
-			base.FAIL(LOGGER, '`make` returned with an error')
+			base.fail(LOGGER, '`make` returned with an error')
 
 		# Provide PMU firmware ELF as an output.
 		elfs = list(PATHS.build.glob('workspace/pmufw/*.elf'))
 		if len(elfs) != 1:
-			base.FAIL(LOGGER, 'Found multiple elf files after build: ' + ' '.join(elf.name for elf in elfs))
+			base.fail(LOGGER, 'Found multiple elf files after build: ' + ' '.join(elf.name for elf in elfs))
 		shutil.copyfile(elfs[0], PATHS.output / 'pmufw.elf')
 
 	def clean(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
+			return  # We're bypassed.
+
 		LOGGER.info('Running `clean`...')
 		try:
-			base.RUN(PATHS, LOGGER, ['make', 'clean'], cwd=PATHS.build / 'workspace/pmufw')
+			base.run(PATHS, LOGGER, ['make', 'clean'], cwd=PATHS.build / 'workspace/pmufw')
 		except subprocess.CalledProcessError:
-			base.FAIL(LOGGER, '`clean` returned with an error')
+			base.fail(LOGGER, '`clean` returned with an error')
 		LOGGER.info('Finished `clean`.')
 		LOGGER.info('Deleting outputs.')
 		shutil.rmtree(PATHS.output, ignore_errors=True)
