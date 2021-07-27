@@ -99,7 +99,7 @@ Stages available:
 				try:
 					shutil.copyfile(parsed_sourceurl.path, tarfile, follow_symlinks=True)
 				except Exception as e:
-					base.fail(LOGGER, 'Unable to copy kernel source tarball', e)
+					base.fail(LOGGER, 'Unable to copy ATF source tarball', e)
 			else:
 				try:
 					base.run(
@@ -115,7 +115,7 @@ Stages available:
 						tarfile.unlink()
 					except:
 						pass
-					base.fail(LOGGER, 'Unable to download kernel source tarball')
+					base.fail(LOGGER, 'Unable to download ATF source tarball')
 		chosen_source = PATHS.build / 'atf.tar.gz'
 		if chosen_source.resolve() != tarfile.resolve():
 			LOGGER.info('Selected new source, forcing new `prepare`.')

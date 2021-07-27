@@ -1,0 +1,260 @@
+import argparse, tempfile
+import filecmp
+import hashlib
+import io
+import itertools
+import logging
+import os
+import shlex
+import shutil
+import subprocess
+import textwrap
+import time
+import urllib.parse
+from io import TextIOWrapper
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from pkg_resources import require
+
+from . import base
+
+
+class DTBBuilder(base.BaseBuilder):
+	NAME: str = 'dtb'
+	statefile: Optional[base.JSONStateFile] = None
+
+	def update_config(self, config: Dict[str, Any], ARGS: argparse.Namespace) -> None:
+		super().update_config(config, ARGS)
+		if self.COMMON_CONFIG.get('zynq_series', '') == 'zynq':
+			self.BUILDER_CONFIG.setdefault('cpu_id', 'ps7_cortexa9_0')
+		elif self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp':
+			self.BUILDER_CONFIG.setdefault('cpu_id', 'psu_cortexa53_0')
+
+	@classmethod
+	def prepare_argparse(cls, group: argparse._ArgumentGroup) -> None:
+		group.description = '''
+Build the Device Tree
+
+Stages available:
+  fetch: Download or copy device-tree generator sources
+  prepare: Extract DTG sources, generate automatic dts files, copy user dts files.
+  build: Build the device tree
+'''.strip()
+
+	def instantiate_stages(self) -> None:
+		super().instantiate_stages()
+		self.STAGES['clean'] = base.Stage(self, 'clean', self.check, self.clean, include_in_all=False)
+		self.STAGES['fetch'] = base.Stage(
+		    self, 'fetch', self.check, self.fetch, after=[self.NAME + ':distclean', self.NAME + ':clean']
+		)
+		self.STAGES['prepare'] = base.Stage(self, 'prepare', self.check, self.prepare, requires=[self.NAME + ':fetch'])
+		self.STAGES['build'] = base.Stage(self, 'build', self.check, self.build, requires=[self.NAME + ':prepare'])
+
+	def check(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> bool:
+		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
+			return True  # We're bypassed.
+
+		if self.statefile is None:
+			self.statefile = base.JSONStateFile(PATHS.build / '.state.json')
+
+		check_ok: bool = True
+		if STAGE.name in (
+		    'fetch', 'prepare') and 'dtg_tag' not in self.BUILDER_CONFIG and 'dtg_sourceurl' not in self.BUILDER_CONFIG:
+			LOGGER.error(
+			    'Please set a `dtg_tag` or `dtg_sourceurl` (file://... is valid) in the configuration for the "dtg" builder.'
+			)
+			check_ok = False
+		if not shutil.which('dtc'):
+			LOGGER.error('dtc not found. Did you source the Vivado environment files?')
+			check_ok = False
+		return check_ok
+
+	def fetch(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
+		assert self.statefile is not None
+		sourceurl: Optional[str] = self.BUILDER_CONFIG.get('dtg_sourceurl', None)
+		if sourceurl is None:
+			sourceurl = 'https://github.com/Xilinx/device-tree-xlnx/archive/refs/tags/{tag}.tar.gz'.format(
+			    tag=self.BUILDER_CONFIG['dtg_tag']
+			)
+		sourceid = hashlib.new('sha256', sourceurl.encode('utf8')).hexdigest()
+		tarfile = PATHS.build / 'dtg-{sourceid}.tar.gz'.format(sourceid=sourceid)
+		if tarfile.exists():
+			# This step is already complete.
+			LOGGER.info('Sources already available.  Not fetching.')
+		else:
+			parsed_sourceurl = urllib.parse.urlparse(sourceurl)
+			if parsed_sourceurl.scheme == 'file':
+				try:
+					shutil.copyfile(parsed_sourceurl.path, tarfile, follow_symlinks=True)
+				except Exception as e:
+					base.fail(LOGGER, 'Unable to copy DTG source tarball', e)
+			else:
+				try:
+					base.run(
+					    PATHS,
+					    LOGGER,
+					    ['wget', '-O', tarfile, sourceurl],
+					    stdout=None if self.ARGS.verbose else subprocess.PIPE,
+					    stderr=None if self.ARGS.verbose else subprocess.STDOUT,
+					    OUTPUT_LOGLEVEL=logging.NOTSET,
+					)
+				except Exception as e:
+					try:
+						tarfile.unlink()
+					except:
+						pass
+					base.fail(LOGGER, 'Unable to download DTG source tarball')
+
+		chosen_source = PATHS.build / 'dtg.tar.gz'
+		if chosen_source.resolve() != tarfile.resolve():
+			LOGGER.info('Selected new source, forcing new `prepare`.')
+			try:
+				chosen_source.unlink()
+			except FileNotFoundError:
+				pass
+			chosen_source.symlink_to(tarfile)
+			with self.statefile as state:
+				state['tree_ready'] = False
+		LOGGER.debug('Selected source ' + str(tarfile.name))
+
+	def prepare(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
+		assert self.statefile is not None
+
+		# We'll need the XSA
+		user_xsa = PATHS.user_sources / 'system.xsa'
+		if not user_xsa.exists():
+			base.fail(LOGGER, 'Unable to locate system.xsa in the sources directory.')
+		user_xsa_hash = base.hash_file('sha256', open(user_xsa, 'rb')).hexdigest()
+		if self.statefile.state.get('xsa_hash', None) == user_xsa_hash:
+			LOGGER.info('The source system.xsa file has not changed.')
+		else:
+			LOGGER.info('Importing source: system.xsa')
+			shutil.copyfile(user_xsa, PATHS.build / 'system.xsa')
+			with self.statefile as state:
+				state['xsa_hash'] = user_xsa_hash
+				state['dts_generated'] = False
+
+		# We'll need the DTG source repository.
+		dtgdir = PATHS.build / 'dtg'
+		if self.statefile.state.get('tree_ready', False):
+			LOGGER.info('The Device Tree Generator source tree has already been extracted.  Skipping.')
+		else:
+			LOGGER.debug('Removing any existing Device Tree Generator source tree.')
+			shutil.rmtree(dtgdir, ignore_errors=True)
+			LOGGER.info('Extracting the Device Tree Generator source tree.')
+			dtgdir.mkdir()
+			try:
+				base.run(PATHS, LOGGER, ['tar', '-xf', str(PATHS.build / 'dtg.tar.gz'), '-C', str(dtgdir)])
+			except subprocess.CalledProcessError:
+				base.fail(LOGGER, 'Unable to extract Device Tree Generator source tarball')
+			while True:
+				subdirs = [x for x in dtgdir.glob('*') if x.is_dir()]
+				if len(subdirs) == 1 and not (dtgdir / '.gitignore').exists():
+					LOGGER.debug(
+					    'Found a single subdirectory {dir} and no .gitignore.  Moving it up.'.format(
+					        dir=repr(str(subdirs[0].name))
+					    )
+					)
+					try:
+						shutil.rmtree(str(dtgdir) + '~', ignore_errors=True)
+						os.rename(subdirs[0], Path(str(dtgdir) + '~'))
+						dtgdir.rmdir()
+						os.rename(Path(str(dtgdir) + '~'), dtgdir)
+					except Exception as e:
+						base.fail(LOGGER, 'Unable to relocate Device Tree Generator source subdirectory.', e)
+				else:
+					break
+			with self.statefile as state:
+				state['tree_ready'] = True
+
+		# We'll need to generate the automatic dts files.
+		dtsdir = PATHS.build / 'dts'
+		if self.statefile.state.get('dts_generated', False):
+			LOGGER.info('The automatic dts files have already been generated.')
+		else:
+			workdir = tempfile.TemporaryDirectory(prefix='xsi_workdir')
+			shutil.rmtree(dtsdir, ignore_errors=True)
+
+			shutil.copyfile(PATHS.build / 'system.xsa', Path(workdir.name) / 'system.xsa')
+			xsct_script = textwrap.dedent(
+			    """
+			set hw_design [hsi open_hw_design system.xsa]
+			hsi set_repo_path {builddir}/dtg
+			hsi create_sw_design device-tree -os device_tree -proc {cpu_id}
+			hsi generate_target -dir dts
+			"""
+			).strip().format(
+			    builddir=PATHS.build.resolve(), **self.BUILDER_CONFIG
+			)
+
+			try:
+				base.run(
+				    PATHS,
+				    LOGGER,
+				    ['xsct'],
+				    stdin=xsct_script,
+				    cwd=workdir.name,
+				)
+			except subprocess.CalledProcessError:
+				base.fail(LOGGER, 'Unable to generate automatic dts files.')
+			with self.statefile as state:
+				state['dts_generated'] = True
+
+			shutil.move(str(Path(workdir.name) / 'dts'), dtsdir)
+
+			LOGGER.debug('Appending #include for system-user.dtsi.')
+			with open(dtsdir / 'system-top.dts', 'a') as fd:
+				fd.write('\n#include "system-user.dtsi"')
+
+		LOGGER.info('Importing source: system-user.dtsi')
+		configfile = PATHS.user_sources / 'system-user.dtsi'
+		if not configfile.exists():
+			base.fail(LOGGER, 'No source file named "system-user.dtsi".')
+		else:
+			shutil.copyfile(configfile, dtsdir / 'system-user.dtsi')
+
+	def build(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER):
+			return  # We're bypassed.
+
+		dtsdir = PATHS.build / 'dts'
+		LOGGER.info('Running `cpp` to generate the composite dts')
+		try:
+			base.run(
+			    PATHS,
+			    LOGGER,
+			    ['cpp', '-nostdinc', '-undef', '-x', 'assembler-with-cpp', 'system-top.dts', '-o', 'composite.dts'],
+			    cwd=dtsdir
+			)
+		except subprocess.CalledProcessError:
+			base.fail(LOGGER, '`dtc` returned with an error')
+
+		LOGGER.info('Running `dtc` to generate dtb')
+		try:
+			base.run(
+			    PATHS, LOGGER, ['dtc', '-I', 'dts', '-O', 'dtb', '-o', 'composite.dtb', 'composite.dts'], cwd=dtsdir
+			)
+		except subprocess.CalledProcessError:
+			base.fail(LOGGER, '`dtc` returned with an error')
+
+		# Provide composite dts as an output.
+		shutil.copyfile(dtsdir / 'composite.dts', PATHS.output / 'system.dts')
+		# Provide dtb as an output.
+		shutil.copyfile(dtsdir / 'composite.dtb', PATHS.output / 'system.dtb')
+
+	def clean(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
+			return  # We're bypassed.
+
+		LOGGER.info('Deleting device-tree source files.')
+		shutil.rmtree(PATHS.build / 'dts', ignore_errors=True)
+		LOGGER.info('Deleting outputs.')
+		shutil.rmtree(PATHS.output, ignore_errors=True)
+		PATHS.output.mkdir(parents=True, exist_ok=True)
