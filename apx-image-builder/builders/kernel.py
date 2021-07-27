@@ -115,7 +115,7 @@ file will be output as kernel.config.built.
 		self.kbuild_args = []
 		if self.BUILDER_CONFIG.get('profile', '') not in ('arm', 'arm64', 'custom'):
 			LOGGER.error('You must set builders.kernel.profile to one of "arm", "arm64", "custom".')
-			check_ok = False
+			return False
 		elif self.BUILDER_CONFIG['profile'] == 'arm':
 			self.kbuild_args += ['ARCH=arm', 'CROSS_COMPILE=arm-none-eabi-']
 		elif self.BUILDER_CONFIG['profile'] == 'arm64':
@@ -128,7 +128,7 @@ file will be output as kernel.config.built.
 			LOGGER.error(
 			    'If you are using builders.kernel.profile "custom", you must supply ARCH=... and CROSS_COMPILE=... in builders.kernel.extra_kbuild_args.'
 			)
-			check_ok = False
+			return False
 		else:
 			cross_compile = [x.split('=', 1)[-1] for x in self.kbuild_args if x.startswith('CROSS_COMPILE=')][0]
 			if not shutil.which(cross_compile + 'gcc'):
@@ -180,12 +180,7 @@ file will be output as kernel.config.built.
 					base.RUN(
 					    PATHS,
 					    LOGGER,
-					    [
-					        'wget', '-O', tarfile,
-					        'https://github.com/Xilinx/linux-xlnx/archive/refs/tags/{tag}.tar.gz'.format(
-					            tag=self.BUILDER_CONFIG['kernel_tag']
-					        )
-					    ],
+					    ['wget', '-O', tarfile, sourceurl],
 					    stdout=None if self.ARGS.verbose else subprocess.PIPE,
 					    stderr=None if self.ARGS.verbose else subprocess.STDOUT,
 					    OUTPUT_LOGLEVEL=logging.NOTSET,

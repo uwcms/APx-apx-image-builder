@@ -124,6 +124,8 @@ class BaseBuilder(object):
 	def update_config(self, config: Dict[str, Any], ARGS: argparse.Namespace) -> None:
 		self.COMMON_CONFIG = config
 		self.BUILDER_CONFIG = config.get('builders', {}).get(self.NAME, {})
+		if self.BUILDER_CONFIG is None:
+			self.BUILDER_CONFIG = {}
 		self.ARGS = ARGS
 
 	def prepare_argparse(self, group: argparse._ArgumentGroup) -> None:
