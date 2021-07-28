@@ -11,10 +11,8 @@ working_directory: ./
 working_directory_config_relative: true
 
 # User sources directory.
-# All sources will be pulled from a subdirectory if this folder with the name of
-# the builder.
-# Default: './'
-sources_directory: './'
+# Default: './sources'
+sources_directory: ./sources
 
 # Build directory.
 # All work will be done in subdirectories of this folder.
@@ -29,8 +27,58 @@ build_directory: ./build
 # Default: './output'
 output_directory: ./output
 
+# The series of ZYNQ part used.
+# One of: 'zynq', 'zynqmp'
+zynq_series: zynqmp
+
 # Builder-specific configuration.
 builders:
+  fsbl:
+    # Extra arguments to add to `make`.
+    extra_makeflags: ['CFLAGS="-DDEBUG_INFO"']
+
+    # The processor to generate the FSBL for.
+    # This should normally be auto-detected.
+    #cpu_id: ps7_cortexa9_0
+
+    # The name of the app to generate.
+    # This should normally be auto-detected.
+    #app_name: zynq_fsbl
+  pmu:
+    # Extra arguments to add to `make`.
+    #extra_makeflags: []
+
+    # The processor to generate the PMU firmware for.
+    # This should normally be auto-detected.
+    #cpu_id: ps_pmu_0
+
+    # The name of the app to generate.
+    # This should normally be auto-detected.
+    #app_name: zynqmp_pmufw
+  atf:
+    # The url to fetch the ATF source tarball.
+    # file://... is valid.
+    #atf_sourceurl: '...'
+
+    # The ATF source tag to fetch.
+    # Ignored if atf_sourceurl is set.
+    atf_tag: xilinx-v2020.2
+
+    # Extra arguments to add to `make`.
+    # If you define this, you must include your own copy of the base values.
+    #makeflags: ['CROSS_COMPILE=aarch64-none-elf-', 'PLAT=zynqmp', 'RESET_TO_BL31=1']
+  dtb:
+    # The url to fetch the device-tree generator source tarball.
+    # file://... is valid.
+    #dtg_sourceurl: '...'
+
+    # The device-tree generator source tag to fetch.
+    # Ignored if atf_sourceurl is set.
+    dtg_tag: xilinx-v2020.2
+
+    # The processor to generate the dtb for.
+    # This should normally be auto-detected.
+    #cpu_id: psu_cortexa53_0
   kernel:
     # The url to fetch the kernel source tarball.
     # file://... is valid.
@@ -41,10 +89,11 @@ builders:
     kernel_tag: xilinx-v2020.2
 
     # This defines what build profile to use for the kernel.
+    # If unset, it will automatically choose based on the value of zynq_series.
     #   'arm':    Build for ZYNQ-7000 with default compiler.
     #   'arm64':  Build for ZynqMP with default compiler.
     #   'custom': Use custom settings.  You must supply ARCH= and CROSS_COMPILE= in extra_kbuild_args.
-    profile: arm64
+    #profile: arm64
 
     # Extra arguments to add to *ALL* kbuild invocations.
     # This is normally empty.
