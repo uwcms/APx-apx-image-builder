@@ -37,13 +37,13 @@ Stages available:
   prepare: Extract sources and import user config
   (defconfig): Run `make defconfig`
   (oldconfig): Run `make oldconfig`
-  (menuconfig): Run `make menuconfig`
+  (nconfig): Run `make nconfig`
   olddefconfig: Run `make olddefconfig`
                 (required by `build` to ensure config consistency)
   build: Build the kernel
 
 The user-defined configuration will be output as kernel.config.user during the
-`prepare` step, as well as any of def/old/menuconfig.  You must manually move
+`prepare` step, as well as any of def/old/nconfig.  You must manually move
 this back to the user sources directory for the kernel builder, as it will be
 replaced whenever prepare is run.
 
@@ -79,11 +79,11 @@ file will be output as kernel.config.built.
 		    before=[self.NAME + ':olddefconfig'],
 		    include_in_all=False
 		)
-		self.STAGES['menuconfig'] = base.Stage(
+		self.STAGES['nconfig'] = base.Stage(
 		    self,
-		    'menuconfig',
+		    'nconfig',
 		    self.check,
-		    self.menuconfig,
+		    self.nconfig,
 		    requires=[self.NAME + ':prepare'],
 		    after=[self.NAME + ':prepare', self.NAME + ':defconfig', self.NAME + ':oldconfig'],
 		    before=[self.NAME + ':olddefconfig'],
@@ -244,7 +244,7 @@ file will be output as kernel.config.built.
 		    'The output file `kernel.config` has been created.  You must manually copy this to your sources directory.'
 		)
 
-	def menuconfig(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
+	def nconfig(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
 		if base.check_bypass(STAGE, PATHS, LOGGER):
 			return  # We're bypassed.
 
@@ -253,19 +253,19 @@ file will be output as kernel.config.built.
 		if not (linuxdir / '.config').exists():
 			base.fail(LOGGER, 'No kernel configuration file was found.  Use kernel:defconfig to generate one.')
 
-		LOGGER.info('Running `menuconfig`...')
+		LOGGER.info('Running `nconfig`...')
 		try:
 			base.run(
 			    PATHS,
-			    LOGGER, ['make'] + self.kbuild_args + ['menuconfig'],
+			    LOGGER, ['make'] + self.kbuild_args + ['nconfig'],
 			    cwd=linuxdir,
 			    stdin=None,
 			    stdout=None,
 			    stderr=None
 			)
 		except subprocess.CalledProcessError:
-			base.fail(LOGGER, 'Kernel `menuconfig` returned with an error')
-		LOGGER.info('Finished `menuconfig`.')
+			base.fail(LOGGER, 'Kernel `nconfig` returned with an error')
+		LOGGER.info('Finished `nconfig`.')
 
 		assert self.statefile is not None
 		with self.statefile as state:
