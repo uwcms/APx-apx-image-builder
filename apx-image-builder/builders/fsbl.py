@@ -61,6 +61,10 @@ Stages available:
 		if base.import_source(PATHS, LOGGER, self.ARGS, 'system.xsa', PATHS.build / 'system.xsa'):
 			with self.statefile as state:
 				state['project_generated'] = False
+		patcher = base.Patcher(PATHS.build / 'patches')
+		if patcher.import_patches(PATHS, LOGGER, self.ARGS, self.BUILDER_CONFIG.get('patches', [])):
+			with self.statefile as state:
+				state['project_generated'] = False
 
 		if self.statefile.state.get('project_generated', False):
 			LOGGER.info('The FSBL project has already been generated.  Skipping.')
@@ -77,16 +81,14 @@ Stages available:
 			"""
 			).strip().format(**self.BUILDER_CONFIG)
 
-			try:
-				base.run(
-				    PATHS,
-				    LOGGER,
-				    ['xsct'],
-				    stdin=xsct_script,
-				    cwd=PATHS.build / 'workspace',
-				)
-			except subprocess.CalledProcessError:
-				base.fail(LOGGER, 'Unable to generate FSBL project')
+			base.run(
+			    PATHS,
+			    LOGGER,
+			    ['xsct'],
+			    stdin=xsct_script,
+			    cwd=PATHS.build / 'workspace',
+			)
+			patcher.apply(PATHS, LOGGER, PATHS.build / 'workspace/fsbl')
 			with self.statefile as state:
 				state['project_generated'] = True
 

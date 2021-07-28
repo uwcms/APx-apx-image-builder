@@ -87,10 +87,15 @@ Stages available:
 		if base.import_source(PATHS, LOGGER, self.ARGS, 'system.xsa', PATHS.build / 'system.xsa'):
 			with self.statefile as state:
 				state['dts_generated'] = False
+		patcher = base.Patcher(PATHS.build / 'patches')
+		if patcher.import_patches(PATHS, LOGGER, self.ARGS, self.BUILDER_CONFIG.get('patches', [])):
+			with self.statefile as state:
+				state['dts_generated'] = False
 
 		# We'll need the DTG source repository.
 		if not self.statefile.state.get('tree_ready', False):
 			base.untar(PATHS, LOGGER, PATHS.build / 'dtg.tar.gz', PATHS.build / 'dtg')
+			patcher.apply(PATHS, LOGGER, PATHS.build / 'dtg')
 			with self.statefile as state:
 				state['tree_ready'] = True
 

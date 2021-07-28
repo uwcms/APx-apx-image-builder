@@ -471,3 +471,60 @@ def untar(
 					fail(LOGGER, 'Unable to reparent subdirectory.', e)
 			else:
 				break
+
+
+class Patcher(object):
+	cache_dir: Path
+	sequence_number: int
+	patchset: List[Path]
+
+	def __init__(self, cache_dir: Path):
+		self.cache_dir = cache_dir
+		self.cache_dir.mkdir(exist_ok=True)
+		self.sequence_number = 0
+		self.patchset = []
+
+	def import_patches(
+	    self,
+	    PATHS: BuildPaths,
+	    LOGGER: logging.Logger,
+	    ARGS: argparse.Namespace,
+	    patchset: Sequence[Union[str, Path]],
+	    *,
+	    quiet: Optional[bool] = None,
+	) -> bool:
+		patchset = [Path(patch) for patch in patchset]
+		len(patchset)
+		prefix_fmt = '{serial:04d}_'
+		changed = False
+		for patch in patchset:
+			target = self.cache_dir / (prefix_fmt.format(serial=self.sequence_number) + str(patch.name))
+			self.sequence_number += 1
+			if import_source(PATHS, LOGGER, ARGS, patch, target, quiet=quiet):
+				changed = True
+			self.patchset.append(target.resolve())
+		for patch in self.cache_dir.glob('*'):
+			if patch.resolve() not in self.patchset:
+				patch.unlink()
+				changed = True
+		return changed
+
+	def apply(
+	    self,
+	    PATHS: BuildPaths,
+	    LOGGER: logging.Logger,
+	    target_dir: Union[str, Path],
+	    *,
+	    LOGLEVEL: int = logging.INFO,
+	) -> None:
+		target_dir = PATHS.build / target_dir
+		for i, patch in enumerate(self.patchset):
+			LOGGER.log(LOGLEVEL, f'Applying patch ({i+1}/{len(self.patchset)}) {patch.name!s}')
+			exit, output = run(
+			    PATHS, LOGGER,
+			    ['patch', '-tNp1', '-d', target_dir, '-i', patch.resolve()], CHECK_RAISE=False
+			)
+			if exit == 2:
+				fail(LOGGER, '`patch` failed to execute correctly.')
+			elif exit == 1:
+				fail(LOGGER, f'Patch {patch.name!s} did not apply correctly.')

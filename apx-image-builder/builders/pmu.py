@@ -64,6 +64,10 @@ Stages available:
 		if base.import_source(PATHS, LOGGER, self.ARGS, 'system.xsa', PATHS.build / 'system.xsa'):
 			with self.statefile as state:
 				state['project_generated'] = False
+		patcher = base.Patcher(PATHS.build / 'patches')
+		if patcher.import_patches(PATHS, LOGGER, self.ARGS, self.BUILDER_CONFIG.get('patches', [])):
+			with self.statefile as state:
+				state['project_generated'] = False
 
 		if self.statefile.state.get('project_generated', False):
 			LOGGER.info('The PMU firmware project has already been generated.  Skipping.')
@@ -90,6 +94,7 @@ Stages available:
 				)
 			except subprocess.CalledProcessError:
 				base.fail(LOGGER, 'Unable to generate PMU firmware project')
+			patcher.apply(PATHS, LOGGER, PATHS.build / 'workspace/pmufw')
 			with self.statefile as state:
 				state['project_generated'] = True
 

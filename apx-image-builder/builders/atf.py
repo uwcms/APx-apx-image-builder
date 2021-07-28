@@ -89,10 +89,15 @@ Stages available:
 
 		assert self.statefile is not None
 		atfdir = PATHS.build / 'atf'
+		patcher = base.Patcher(PATHS.build / 'patches')
+		if patcher.import_patches(PATHS, LOGGER, self.ARGS, self.BUILDER_CONFIG.get('patches', [])):
+			with self.statefile as state:
+				state['tree_ready'] = False
 		if self.statefile.state.get('tree_ready', False):
 			LOGGER.info('The ATF source tree has already been extracted.  Skipping.')
 		else:
 			base.untar(PATHS, LOGGER, PATHS.build / 'atf.tar.gz', atfdir)
+			patcher.apply(PATHS, LOGGER, atfdir)
 			with self.statefile as state:
 				state['tree_ready'] = True
 

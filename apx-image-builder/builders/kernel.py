@@ -175,10 +175,15 @@ file will be output as kernel.config.built.
 
 		assert self.statefile is not None
 		linuxdir = PATHS.build / 'linux'
+		patcher = base.Patcher(PATHS.build / 'patches')
+		if patcher.import_patches(PATHS, LOGGER, self.ARGS, self.BUILDER_CONFIG.get('patches', [])):
+			with self.statefile as state:
+				state['tree_ready'] = False
 		if self.statefile.state.get('tree_ready', False):
 			LOGGER.info('The linux source tree has already been extracted.  Skipping.')
 		else:
 			base.untar(PATHS, LOGGER, 'linux.tar.gz', PATHS.build / 'linux')
+			patcher.apply(PATHS, LOGGER, PATHS.build / 'linux')
 			with self.statefile as state:
 				state['tree_ready'] = True
 
