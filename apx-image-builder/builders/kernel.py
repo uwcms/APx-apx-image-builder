@@ -317,7 +317,9 @@ file will be output as kernel.config.built.
 			except Exception:
 				pass
 
-		base.import_resource(LOGGER, 'kernel_data/binkernel.spec', PATHS.build / 'binkernel.spec')
+		base.import_source(
+		    PATHS, LOGGER, self.ARGS, 'builtin:///kernel_data/binkernel.spec', PATHS.build / 'binkernel.spec'
+		)
 
 		LOGGER.info('Running `make`...')
 		try:

@@ -332,6 +332,7 @@ def import_source(
     ARGS: argparse.Namespace,
     source_url: Union[str, Path],
     target: Union[str, Path],
+    quiet: Optional[bool] = None,
 ) -> bool:
 	comprehensible_source_url = source_url
 
@@ -340,8 +341,10 @@ def import_source(
 
 	if isinstance(source_url, str):
 		parsed_sourceurl = urllib.parse.urlparse(source_url)
-		if parsed_sourceurl.scheme:
-			sourceid = hashlib.new('sha256', source_url.encode('utf8')).hexdigest()
+		sourceid = hashlib.new('sha256', source_url.encode('utf8')).hexdigest()
+		if parsed_sourceurl.scheme in ('http', 'https', 'ftp'):
+			if quiet is None:
+				quiet = False  # Default to verbose, for these.
 			cachefile = PATHS.build / 'downloaded-source-{sourceid}.dat'.format(sourceid=sourceid)
 			if not cachefile.exists():
 				LOGGER.info(f'Downloading source file {comprehensible_source_url!s}')
@@ -364,8 +367,26 @@ def import_source(
 			else:
 				LOGGER.info(f'Already downloaded source file from {comprehensible_source_url!s}')
 			source_url = cachefile
-
+		elif parsed_sourceurl.scheme == 'builtin':
+			if quiet is None:
+				quiet = True  # Default to quiet for these.
+			cachefile = PATHS.build / 'builtin-resource-{sourceid}.dat'.format(sourceid=sourceid)
+			if not cachefile.exists():
+				# Builtin resources don't change, so we won't check.
+				try:
+					import pkg_resources
+					data = pkg_resources.resource_string(parsed_sourceurl.netloc or __name__, parsed_sourceurl.path)
+					with open(cachefile, 'wb') as fd:
+						fd.write(data)
+				except ImportError as e:
+					fail(
+					    LOGGER,
+					    'No supported package resource access module installed.  (install the `pkg_resources` python module)'
+					)
+			source_url = cachefile
 		else:
+			if quiet is None:
+				quiet = False  # Default to verbose, for these.
 			# If the source is relative, it's relative to the user sources dir.
 			source_url = PATHS.user_sources / Path(source_url)
 			try:
@@ -403,30 +424,14 @@ def import_source(
 			changed = True
 
 	if not changed:
-		LOGGER.info(f'Skipping unchanged source file {comprehensible_source_url!s}')
+		if not quiet:
+			LOGGER.info(f'Skipping unchanged source file {comprehensible_source_url!s}')
 		return False
 	else:
-		LOGGER.info(f'Importing source file {comprehensible_source_url!s}')
+		if not quiet:
+			LOGGER.info(f'Importing source file {comprehensible_source_url!s}')
 		shutil.copyfile(source_url, target, follow_symlinks=True)
 		return True
-
-
-def import_resource(
-    LOGGER: logging.Logger,
-    resource: str,
-    target: Path,
-    *,
-    python_module: str = __name__,
-) -> None:
-	try:
-		import pkg_resources
-		data = pkg_resources.resource_string(python_module, resource)
-		with open(target, 'wb') as fd:
-			fd.write(data)
-		return
-	except ImportError as e:
-		pass
-	fail(LOGGER, 'No supported package resource access module installed.  (install pkg_resources python module)')
 
 
 def untar(
