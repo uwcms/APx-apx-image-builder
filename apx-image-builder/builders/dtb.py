@@ -73,46 +73,9 @@ Stages available:
 			sourceurl = 'https://github.com/Xilinx/device-tree-xlnx/archive/refs/tags/{tag}.tar.gz'.format(
 			    tag=self.BUILDER_CONFIG['dtg_tag']
 			)
-		sourceid = hashlib.new('sha256', sourceurl.encode('utf8')).hexdigest()
-		tarfile = PATHS.build / 'dtg-{sourceid}.tar.gz'.format(sourceid=sourceid)
-		if tarfile.exists():
-			# This step is already complete.
-			LOGGER.info('Sources already available.  Not fetching.')
-		else:
-			parsed_sourceurl = urllib.parse.urlparse(sourceurl)
-			if parsed_sourceurl.scheme == 'file':
-				try:
-					shutil.copyfile(parsed_sourceurl.path, tarfile, follow_symlinks=True)
-				except Exception as e:
-					base.fail(LOGGER, 'Unable to copy DTG source tarball', e)
-			else:
-				try:
-					base.run(
-					    PATHS,
-					    LOGGER,
-					    ['wget', '-O', tarfile, sourceurl],
-					    stdout=None if self.ARGS.verbose else subprocess.PIPE,
-					    stderr=None if self.ARGS.verbose else subprocess.STDOUT,
-					    OUTPUT_LOGLEVEL=logging.NOTSET,
-					)
-				except Exception as e:
-					try:
-						tarfile.unlink()
-					except:
-						pass
-					base.fail(LOGGER, 'Unable to download DTG source tarball')
-
-		chosen_source = PATHS.build / 'dtg.tar.gz'
-		if chosen_source.resolve() != tarfile.resolve():
-			LOGGER.info('Selected new source, forcing new `prepare`.')
-			try:
-				chosen_source.unlink()
-			except FileNotFoundError:
-				pass
-			chosen_source.symlink_to(tarfile)
+		if base.import_source(PATHS, LOGGER, self.ARGS, sourceurl, PATHS.build / 'dtg.tar.gz'):
 			with self.statefile as state:
 				state['tree_ready'] = False
-		LOGGER.debug('Selected source ' + str(tarfile.name))
 
 	def prepare(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
 		if base.check_bypass(STAGE, PATHS, LOGGER):
@@ -121,49 +84,13 @@ Stages available:
 		assert self.statefile is not None
 
 		# We'll need the XSA
-		user_xsa = PATHS.user_sources / 'system.xsa'
-		if not user_xsa.exists():
-			base.fail(LOGGER, 'Unable to locate system.xsa in the sources directory.')
-		user_xsa_hash = base.hash_file('sha256', open(user_xsa, 'rb')).hexdigest()
-		if self.statefile.state.get('xsa_hash', None) == user_xsa_hash:
-			LOGGER.info('The source system.xsa file has not changed.')
-		else:
-			LOGGER.info('Importing source: system.xsa')
-			shutil.copyfile(user_xsa, PATHS.build / 'system.xsa')
+		if base.import_source(PATHS, LOGGER, self.ARGS, 'system.xsa', PATHS.build / 'system.xsa'):
 			with self.statefile as state:
-				state['xsa_hash'] = user_xsa_hash
 				state['dts_generated'] = False
 
 		# We'll need the DTG source repository.
-		dtgdir = PATHS.build / 'dtg'
-		if self.statefile.state.get('tree_ready', False):
-			LOGGER.info('The Device Tree Generator source tree has already been extracted.  Skipping.')
-		else:
-			LOGGER.debug('Removing any existing Device Tree Generator source tree.')
-			shutil.rmtree(dtgdir, ignore_errors=True)
-			LOGGER.info('Extracting the Device Tree Generator source tree.')
-			dtgdir.mkdir()
-			try:
-				base.run(PATHS, LOGGER, ['tar', '-xf', str(PATHS.build / 'dtg.tar.gz'), '-C', str(dtgdir)])
-			except subprocess.CalledProcessError:
-				base.fail(LOGGER, 'Unable to extract Device Tree Generator source tarball')
-			while True:
-				subdirs = [x for x in dtgdir.glob('*') if x.is_dir()]
-				if len(subdirs) == 1 and not (dtgdir / '.gitignore').exists():
-					LOGGER.debug(
-					    'Found a single subdirectory {dir} and no .gitignore.  Moving it up.'.format(
-					        dir=repr(str(subdirs[0].name))
-					    )
-					)
-					try:
-						shutil.rmtree(str(dtgdir) + '~', ignore_errors=True)
-						os.rename(subdirs[0], Path(str(dtgdir) + '~'))
-						dtgdir.rmdir()
-						os.rename(Path(str(dtgdir) + '~'), dtgdir)
-					except Exception as e:
-						base.fail(LOGGER, 'Unable to relocate Device Tree Generator source subdirectory.', e)
-				else:
-					break
+		if not self.statefile.state.get('tree_ready', False):
+			base.untar(PATHS, LOGGER, PATHS.build / 'dtg.tar.gz', PATHS.build / 'dtg')
 			with self.statefile as state:
 				state['tree_ready'] = True
 

@@ -57,17 +57,9 @@ Stages available:
 			return  # We're bypassed.
 
 		assert self.statefile is not None
-		user_xsa = PATHS.user_sources / 'system.xsa'
-		if not user_xsa.exists():
-			base.fail(LOGGER, 'Unable to locate system.xsa in the sources directory.')
-		user_xsa_hash = base.hash_file('sha256', open(user_xsa, 'rb')).hexdigest()
-		if self.statefile.state.get('xsa_hash', None) == user_xsa_hash:
-			LOGGER.info('The source system.xsa file has not changed.')
-		else:
-			LOGGER.info('Importing source: system.xsa')
-			shutil.copyfile(user_xsa, PATHS.build / 'system.xsa')
+		# We'll need the XSA
+		if base.import_source(PATHS, LOGGER, self.ARGS, 'system.xsa', PATHS.build / 'system.xsa'):
 			with self.statefile as state:
-				state['xsa_hash'] = user_xsa_hash
 				state['project_generated'] = False
 
 		if self.statefile.state.get('project_generated', False):

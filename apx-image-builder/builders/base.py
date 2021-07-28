@@ -8,6 +8,7 @@ import select
 import shutil
 import subprocess
 import tempfile
+import urllib.parse
 from pathlib import Path, PurePath
 from typing import (IO, Any, Callable, Dict, List, NoReturn, Optional, Sequence, Tuple, Union, cast)
 
@@ -254,13 +255,13 @@ def run(
 	return (ret, stdout)
 
 
-def hash_file(algo: str, file: IO[bytes], block_size=16386):
+def hash_file(algo: str, file: IO[bytes], block_size=16386) -> str:
 	h = hashlib.new(algo)
 	while True:
 		data = file.read(block_size)
 		h.update(data)
 		if not data:
-			return h
+			return h.hexdigest()
 
 
 class JSONStateFile(object):
@@ -323,3 +324,145 @@ def check_bypass(
 		run(PATHS, LOGGER, ['tar', '-xf', bypass_file, '-C', PATHS.output])
 		bypass_canary.touch()
 	return True
+
+
+def import_source(
+    PATHS: BuildPaths,
+    LOGGER: logging.Logger,
+    ARGS: argparse.Namespace,
+    source_url: Union[str, Path],
+    target: Union[str, Path],
+) -> bool:
+	comprehensible_source_url = source_url
+
+	# If the target is relative, it's relative to the build directory.
+	target = PATHS.build / Path(target)
+
+	if isinstance(source_url, str):
+		parsed_sourceurl = urllib.parse.urlparse(source_url)
+		if parsed_sourceurl.scheme:
+			sourceid = hashlib.new('sha256', source_url.encode('utf8')).hexdigest()
+			cachefile = PATHS.build / 'downloaded-source-{sourceid}.dat'.format(sourceid=sourceid)
+			if not cachefile.exists():
+				LOGGER.info(f'Downloading source file {comprehensible_source_url!s}')
+				try:
+					run(
+					    PATHS,
+					    LOGGER,
+					    ['wget', '-O', str(cachefile.resolve()) + '~', source_url],
+					    stdout=None if ARGS.verbose else subprocess.PIPE,
+					    stderr=None if ARGS.verbose else subprocess.STDOUT,
+					    OUTPUT_LOGLEVEL=logging.NOTSET,
+					)
+				except Exception as e:
+					try:
+						cachefile.unlink()
+					except:
+						pass
+					fail(LOGGER, f'Unable to download source file {comprehensible_source_url!s}')
+				os.rename(str(cachefile.resolve()) + '~', cachefile.resolve())
+			else:
+				LOGGER.info(f'Already downloaded source file from {comprehensible_source_url!s}')
+			source_url = cachefile
+
+		else:
+			# If the source is relative, it's relative to the user sources dir.
+			source_url = PATHS.user_sources / Path(source_url)
+			try:
+				comprehensible_source_url = source_url.relative_to(PATHS.user_sources)
+			except ValueError:
+				pass  # Guess it's not a user source.
+
+	# If the source is relative, it's relative to the user sources dir.
+	source_url = PATHS.user_sources / Path(source_url)
+
+	if not source_url.exists():
+		fail(LOGGER, f'Unable to locate source file {comprehensible_source_url!s}')
+
+	changed = False
+	if not target.exists():
+		# Well that's obvious then.
+		changed = True
+	if not changed:
+		# Timestamp check.
+		try:
+			sts = source_url.stat()
+			stt = target.stat()
+			if stt.st_mtime < sts.st_mtime or stt.st_ctime < sts.st_ctime or stt.st_size != sts.st_size:
+				changed = True
+		except Exception:
+			changed = True
+	if not changed:
+		# Hash check.
+		# We really don't want to update source timestamps if we don't have
+		# to, to avoid unnecessary `make` invocations.
+		try:
+			if hash_file('sha256', open(source_url, 'rb')) != hash_file('sha256', open(target, 'rb')):
+				changed = True
+		except Exception:
+			changed = True
+
+	if not changed:
+		LOGGER.info(f'Skipping unchanged source file {comprehensible_source_url!s}')
+		return False
+	else:
+		LOGGER.info(f'Importing source file {comprehensible_source_url!s}')
+		shutil.copyfile(source_url, target, follow_symlinks=True)
+		return True
+
+
+def import_resource(
+    LOGGER: logging.Logger,
+    resource: str,
+    target: Path,
+    *,
+    python_module: str = __name__,
+) -> None:
+	try:
+		import pkg_resources
+		data = pkg_resources.resource_string(python_module, resource)
+		with open(target, 'wb') as fd:
+			fd.write(data)
+		return
+	except ImportError as e:
+		pass
+	fail(LOGGER, 'No supported package resource access module installed.  (install pkg_resources python module)')
+
+
+def untar(
+    PATHS: BuildPaths,
+    LOGGER: logging.Logger,
+    source: Union[str, Path],
+    target: Union[str, Path],
+    *,
+    reparent: bool = True,
+) -> None:
+	# If source or target are relative, they're relative to the build dir.
+	source = PATHS.build / Path(source)
+	target = PATHS.build / Path(target)
+
+	try:
+		shutil.rmtree(target, ignore_errors=True)
+		target.mkdir(parents=True)
+	except Exception:
+		fail(LOGGER, f'Unable to clean up {str(target)!r} before extracting archive.')
+
+	try:
+		run(PATHS, LOGGER, ['tar', '-xf', str(source.resolve()), '-C', str(target.resolve())])
+	except subprocess.CalledProcessError:
+		fail(LOGGER, f'Unable to extract source archive {str(source)!r}')
+
+	if reparent:
+		while True:
+			contents = list(target.glob('*'))
+			if len(contents) == 1 and contents[0].is_dir():
+				LOGGER.debug(f'Found lone subdirectory {str(contents[0].name)!r}.  Reparenting.')
+				try:
+					shutil.rmtree(str(target) + '~', ignore_errors=True)
+					os.rename(contents[0], Path(str(target) + '~'))
+					target.rmdir()
+					os.rename(Path(str(target) + '~'), target)
+				except Exception as e:
+					fail(LOGGER, 'Unable to reparent subdirectory.', e)
+			else:
+				break

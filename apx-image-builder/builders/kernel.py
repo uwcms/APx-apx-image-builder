@@ -109,14 +109,12 @@ file will be output as kernel.config.built.
 			    'Please set a `kernel_tag` or `kernel_sourceurl` (file://... is valid) in the configuration for the "kernel" builder.'
 			)
 			check_ok = False
-		if STAGE.name == 'fetch' and not shutil.which('wget'):
-			LOGGER.error('Please install `wget`.')
-			check_ok = False
 		self.kbuild_args = []
 		if self.BUILDER_CONFIG.get('profile', '') not in ('arm', 'arm64', 'custom'):
 			LOGGER.error('You must set builders.kernel.profile to one of "arm", "arm64", "custom".')
 			return False
 		elif self.BUILDER_CONFIG['profile'] == 'arm':
+			# TODO: Make this check 'default' vs 'custom' and use the 'zynq_series' setting.
 			self.kbuild_args += ['ARCH=arm', 'CROSS_COMPILE=arm-none-eabi-']
 		elif self.BUILDER_CONFIG['profile'] == 'arm64':
 			self.kbuild_args += ['ARCH=arm64', 'CROSS_COMPILE=aarch64-none-elf-']
@@ -166,45 +164,10 @@ file will be output as kernel.config.built.
 			sourceurl = 'https://github.com/Xilinx/linux-xlnx/archive/refs/tags/{tag}.tar.gz'.format(
 			    tag=self.BUILDER_CONFIG['kernel_tag']
 			)
-		sourceid = hashlib.new('sha256', sourceurl.encode('utf8')).hexdigest()
-		tarfile = PATHS.build / 'linux-{sourceid}.tar.gz'.format(sourceid=sourceid)
-		if tarfile.exists():
-			# This step is already complete.
-			LOGGER.info('Sources already available.  Not fetching.')
-		else:
-			parsed_sourceurl = urllib.parse.urlparse(sourceurl)
-			if parsed_sourceurl.scheme == 'file':
-				try:
-					shutil.copyfile(parsed_sourceurl.path, tarfile, follow_symlinks=True)
-				except Exception as e:
-					base.fail(LOGGER, 'Unable to copy kernel source tarball', e)
-			else:
-				try:
-					base.run(
-					    PATHS,
-					    LOGGER,
-					    ['wget', '-O', tarfile, sourceurl],
-					    stdout=None if self.ARGS.verbose else subprocess.PIPE,
-					    stderr=None if self.ARGS.verbose else subprocess.STDOUT,
-					    OUTPUT_LOGLEVEL=logging.NOTSET,
-					)
-				except Exception as e:
-					try:
-						tarfile.unlink()
-					except:
-						pass
-					base.fail(LOGGER, 'Unable to download kernel source tarball')
-		chosen_source = PATHS.build / 'linux.tar.gz'
-		if chosen_source.resolve() != tarfile.resolve():
-			LOGGER.info('Selected new source, forcing new `prepare`.')
-			try:
-				chosen_source.unlink()
-			except FileNotFoundError:
-				pass
-			chosen_source.symlink_to(tarfile)
+
+		if base.import_source(PATHS, LOGGER, self.ARGS, sourceurl, PATHS.build / 'linux.tar.gz'):
 			with self.statefile as state:
 				state['tree_ready'] = False
-		LOGGER.debug('Selected source ' + str(tarfile.name))
 
 	def prepare(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
 		if base.check_bypass(STAGE, PATHS, LOGGER):
@@ -215,54 +178,23 @@ file will be output as kernel.config.built.
 		if self.statefile.state.get('tree_ready', False):
 			LOGGER.info('The linux source tree has already been extracted.  Skipping.')
 		else:
-			LOGGER.debug('Removing any existing linux source tree.')
-			shutil.rmtree(linuxdir, ignore_errors=True)
-			LOGGER.info('Extracting the linux source tree.')
-			linuxdir.mkdir()
-			try:
-				base.run(PATHS, LOGGER, ['tar', '-xf', str(PATHS.build / 'linux.tar.gz'), '-C', str(linuxdir)])
-			except subprocess.CalledProcessError:
-				base.fail(LOGGER, 'Unable to extract kernel source tarball')
-			while True:
-				subdirs = [x for x in linuxdir.glob('*') if x.is_dir()]
-				if len(subdirs) == 1 and not (linuxdir / 'Makefile').exists():
-					LOGGER.debug(
-					    'Found a single subdirectory {dir} and no Makefile.  Moving it up.'.format(
-					        dir=repr(str(subdirs[0].name))
-					    )
-					)
-					try:
-						shutil.rmtree(str(linuxdir) + '~', ignore_errors=True)
-						os.rename(subdirs[0], Path(str(linuxdir) + '~'))
-						linuxdir.rmdir()
-						os.rename(Path(str(linuxdir) + '~'), linuxdir)
-					except Exception as e:
-						base.fail(LOGGER, 'Unable to relocate linux source subdirectory.', e)
-				else:
-					break
+			base.untar(PATHS, LOGGER, 'linux.tar.gz', PATHS.build / 'linux')
 			with self.statefile as state:
 				state['tree_ready'] = True
 
-		LOGGER.info('Importing user kernel config file.')
-		configfile = PATHS.user_sources / 'kernel.config'
-		if not configfile.exists():
-			LOGGER.warning('No source file named "kernel.config".')
-		else:
-			user_config_hash = base.hash_file('sha256', open(configfile, 'rb')).hexdigest()
-			if self.statefile.state.get('user_config_hash', None) == user_config_hash:
-				LOGGER.info('The user config file has not changed.')
-			else:
+		if base.import_source(PATHS, LOGGER, self.ARGS, 'kernel.config', PATHS.build / 'user.config'):
+			# We need to use a two stage load here because we actually do update
+			# the imported source, and don't want needless imports to interfere
+			# with `make` caching.
+			user_config_hash = base.hash_file('sha256', open(PATHS.build / 'user.config', 'rb'))
+			if self.statefile.state.get('user_config_hash', '') != user_config_hash:
+				shutil.copyfile(PATHS.build / 'user.config', PATHS.build / 'linux/.config')
 				with self.statefile as state:
-					state['user_config_hash'] = None
-					state['built_config_hash'] = None
-					try:
-						shutil.copyfile(configfile, linuxdir / '.config')
-					except Exception as e:
-						base.fail(LOGGER, 'Unable to copy kernel.config source file.', e)
 					state['user_config_hash'] = user_config_hash
+					state['built_config_hash'] = None
 
-			# Provide our kernel config as an output.
-			shutil.copyfile(linuxdir / '.config', PATHS.output / 'kernel.config')
+		# Provide our kernel config as an output.
+		shutil.copyfile(linuxdir / '.config', PATHS.output / 'kernel.config')
 
 	def defconfig(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
 		if base.check_bypass(STAGE, PATHS, LOGGER):
@@ -275,6 +207,10 @@ file will be output as kernel.config.built.
 		except subprocess.CalledProcessError:
 			base.fail(LOGGER, 'Kernel `defconfig` returned with an error')
 		LOGGER.info('Finished `defconfig`.')
+
+		assert self.statefile is not None
+		with self.statefile as state:
+			state['user_config_hash'] = None  # disable any "caching" next run
 
 		# Provide our kernel config as an output.
 		shutil.copyfile(linuxdir / '.config', PATHS.output / 'kernel.config')
@@ -297,6 +233,10 @@ file will be output as kernel.config.built.
 		except subprocess.CalledProcessError:
 			base.fail(LOGGER, 'Kernel `oldconfig` returned with an error')
 		LOGGER.info('Finished `oldconfig`.')
+
+		assert self.statefile is not None
+		with self.statefile as state:
+			state['user_config_hash'] = None  # disable any "caching" next run
 
 		# Provide our kernel config as an output.
 		shutil.copyfile(linuxdir / '.config', PATHS.output / 'kernel.config')
@@ -327,6 +267,10 @@ file will be output as kernel.config.built.
 			base.fail(LOGGER, 'Kernel `menuconfig` returned with an error')
 		LOGGER.info('Finished `menuconfig`.')
 
+		assert self.statefile is not None
+		with self.statefile as state:
+			state['user_config_hash'] = None  # disable any "caching" next run
+
 		# Provide our kernel config as an output.
 		shutil.copyfile(linuxdir / '.config', PATHS.output / 'kernel.config')
 		LOGGER.warning(
@@ -343,7 +287,7 @@ file will be output as kernel.config.built.
 		if not (linuxdir / '.config').exists():
 			base.fail(LOGGER, 'No kernel configuration file was found.  Use kernel:defconfig to generate one.')
 
-		built_config_hash = base.hash_file('sha256', open(linuxdir / '.config', 'rb')).hexdigest()
+		built_config_hash = base.hash_file('sha256', open(linuxdir / '.config', 'rb'))
 		if self.statefile.state.get('built_config_hash', None) == built_config_hash:
 			LOGGER.info('We have already run `olddefconfig` on this config file.')
 		else:
@@ -354,7 +298,7 @@ file will be output as kernel.config.built.
 				base.fail(LOGGER, 'Kernel `olddefconfig` returned with an error')
 			LOGGER.info('Finished `olddefconfig`.')
 			with self.statefile as state:
-				state['built_config_hash'] = base.hash_file('sha256', open(linuxdir / '.config', 'rb')).hexdigest()
+				state['built_config_hash'] = base.hash_file('sha256', open(linuxdir / '.config', 'rb'))
 
 		# Provide our final, used kernel config as an output, separate from the user-defined one.
 		shutil.copyfile(linuxdir / '.config', PATHS.output / 'kernel.config.built')
@@ -373,16 +317,8 @@ file will be output as kernel.config.built.
 			except Exception:
 				pass
 
-		try:
-			import pkg_resources
-			specfile = pkg_resources.resource_string(__name__, "binkernel.spec")
-			with open(PATHS.build / 'binkernel.spec', 'wb') as fd:
-				fd.write(specfile)
-		except ImportError as e:
-			base.fail(
-			    LOGGER,
-			    'The python pkg_resources module is not available, so we cannot access our bundled RPM spec file.'
-			)
+		base.import_resource(LOGGER, 'kernel_data/binkernel.spec', PATHS.build / 'binkernel.spec')
+
 		LOGGER.info('Running `make`...')
 		try:
 			base.run(PATHS, LOGGER, ['make'] + self.kbuild_args, cwd=linuxdir)

@@ -79,45 +79,9 @@ Stages available:
 			sourceurl = 'https://github.com/Xilinx/arm-trusted-firmware/archive/refs/tags/{tag}.tar.gz'.format(
 			    tag=self.BUILDER_CONFIG['atf_tag']
 			)
-		sourceid = hashlib.new('sha256', sourceurl.encode('utf8')).hexdigest()
-		tarfile = PATHS.build / 'atf-{sourceid}.tar.gz'.format(sourceid=sourceid)
-		if tarfile.exists():
-			# This step is already complete.
-			LOGGER.info('Sources already available.  Not fetching.')
-		else:
-			parsed_sourceurl = urllib.parse.urlparse(sourceurl)
-			if parsed_sourceurl.scheme == 'file':
-				try:
-					shutil.copyfile(parsed_sourceurl.path, tarfile, follow_symlinks=True)
-				except Exception as e:
-					base.fail(LOGGER, 'Unable to copy ATF source tarball', e)
-			else:
-				try:
-					base.run(
-					    PATHS,
-					    LOGGER,
-					    ['wget', '-O', tarfile, sourceurl],
-					    stdout=None if self.ARGS.verbose else subprocess.PIPE,
-					    stderr=None if self.ARGS.verbose else subprocess.STDOUT,
-					    OUTPUT_LOGLEVEL=logging.NOTSET,
-					)
-				except Exception as e:
-					try:
-						tarfile.unlink()
-					except:
-						pass
-					base.fail(LOGGER, 'Unable to download ATF source tarball')
-		chosen_source = PATHS.build / 'atf.tar.gz'
-		if chosen_source.resolve() != tarfile.resolve():
-			LOGGER.info('Selected new source, forcing new `prepare`.')
-			try:
-				chosen_source.unlink()
-			except FileNotFoundError:
-				pass
-			chosen_source.symlink_to(tarfile)
+		if base.import_source(PATHS, LOGGER, self.ARGS, sourceurl, PATHS.build / 'atf.tar.gz'):
 			with self.statefile as state:
 				state['tree_ready'] = False
-		LOGGER.debug('Selected source ' + str(tarfile.name))
 
 	def prepare(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
 		if base.check_bypass(STAGE, PATHS, LOGGER):
@@ -128,31 +92,7 @@ Stages available:
 		if self.statefile.state.get('tree_ready', False):
 			LOGGER.info('The ATF source tree has already been extracted.  Skipping.')
 		else:
-			LOGGER.debug('Removing any existing ATF source tree.')
-			shutil.rmtree(atfdir, ignore_errors=True)
-			LOGGER.info('Extracting the ATF source tree.')
-			atfdir.mkdir()
-			try:
-				base.run(PATHS, LOGGER, ['tar', '-xf', str(PATHS.build / 'atf.tar.gz'), '-C', str(atfdir)])
-			except subprocess.CalledProcessError:
-				base.fail(LOGGER, 'Unable to extract ATF source tarball')
-			while True:
-				subdirs = [x for x in atfdir.glob('*') if x.is_dir()]
-				if len(subdirs) == 1 and not (atfdir / 'Makefile').exists():
-					LOGGER.debug(
-					    'Found a single subdirectory {dir} and no Makefile.  Moving it up.'.format(
-					        dir=repr(str(subdirs[0].name))
-					    )
-					)
-					try:
-						shutil.rmtree(str(atfdir) + '~', ignore_errors=True)
-						os.rename(subdirs[0], Path(str(atfdir) + '~'))
-						atfdir.rmdir()
-						os.rename(Path(str(atfdir) + '~'), atfdir)
-					except Exception as e:
-						base.fail(LOGGER, 'Unable to relocate ATF source subdirectory.', e)
-				else:
-					break
+			base.untar(PATHS, LOGGER, PATHS.build / 'atf.tar.gz', atfdir)
 			with self.statefile as state:
 				state['tree_ready'] = True
 
