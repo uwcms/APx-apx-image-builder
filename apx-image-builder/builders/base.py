@@ -190,15 +190,15 @@ StrOrBytesPath = Union[str, bytes, Path]  # Hacked from python typeshed
 
 
 def run(
-    PATHS: BuildPaths,
-    LOGGER: logging.Logger,
-    cmdargs: Union[StrOrBytesPath, Sequence[StrOrBytesPath]],
-    check: bool = True,
-    CHECK_RAISE: bool = True,
-    DETAIL_LOGLEVEL: int = logging.DEBUG,
-    OUTPUT_LOGLEVEL: int = logging.DEBUG,
-    ERROR_LOGLEVEL: int = logging.ERROR,
-    **kwargs
+        PATHS: BuildPaths,
+        LOGGER: logging.Logger,
+        cmdargs: Union[StrOrBytesPath, Sequence[StrOrBytesPath]],
+        check: bool = True,
+        CHECK_RAISE: bool = True,
+        DETAIL_LOGLEVEL: int = logging.DEBUG,
+        OUTPUT_LOGLEVEL: int = logging.DEBUG,
+        ERROR_LOGLEVEL: int = logging.ERROR,
+        **kwargs
 ) -> Tuple[int, bytes]:
 	kwargs.setdefault('stdin', subprocess.DEVNULL)  # Change default to "no input accepted".
 	kwargs.setdefault('stdout', subprocess.PIPE)  # Change default to "capture output".
@@ -306,12 +306,12 @@ class JSONStateFile(object):
 
 
 def check_bypass(
-    STAGE: Stage,
-    PATHS: BuildPaths,
-    LOGGER: logging.Logger,
-    *,
-    extract: bool = True,
-    bypass_file: Optional[Union[str, Path]] = None
+        STAGE: Stage,
+        PATHS: BuildPaths,
+        LOGGER: logging.Logger,
+        *,
+        extract: bool = True,
+        bypass_file: Optional[Union[str, Path]] = None
 ) -> bool:
 	if bypass_file is None:
 		bypass_file = '{builder_name}.bypass.tbz2'.format(builder_name=STAGE.builder.NAME)
@@ -341,12 +341,13 @@ def check_bypass(
 
 
 def import_source(
-    PATHS: BuildPaths,
-    LOGGER: logging.Logger,
-    ARGS: argparse.Namespace,
-    source_url: Union[str, Path],
-    target: Union[str, Path],
-    quiet: Optional[bool] = None,
+        PATHS: BuildPaths,
+        LOGGER: logging.Logger,
+        ARGS: argparse.Namespace,
+        source_url: Union[str, Path],
+        target: Union[str, Path],
+        quiet: Optional[bool] = None,
+        ignore_timestamps: bool = False,
 ) -> bool:
 	comprehensible_source_url = source_url
 
@@ -418,7 +419,7 @@ def import_source(
 	if not target.exists():
 		# Well that's obvious then.
 		changed = True
-	if not changed:
+	if not changed and not ignore_timestamps:
 		# Timestamp check.
 		try:
 			sts = source_url.stat()
@@ -449,12 +450,12 @@ def import_source(
 
 
 def untar(
-    PATHS: BuildPaths,
-    LOGGER: logging.Logger,
-    source: Union[str, Path],
-    target: Union[str, Path],
-    *,
-    reparent: bool = True,
+        PATHS: BuildPaths,
+        LOGGER: logging.Logger,
+        source: Union[str, Path],
+        target: Union[str, Path],
+        *,
+        reparent: bool = True,
 ) -> None:
 	# If source or target are relative, they're relative to the build dir.
 	source = PATHS.build / Path(source)

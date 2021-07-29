@@ -187,7 +187,8 @@ file will be output as kernel.config.built.
 			with self.statefile as state:
 				state['tree_ready'] = True
 
-		if base.import_source(PATHS, LOGGER, self.ARGS, 'kernel.config', PATHS.build / 'user.config'):
+		if base.import_source(PATHS, LOGGER, self.ARGS, 'kernel.config', PATHS.build / 'user.config',
+		                      ignore_timestamps=True):
 			# We need to use a two stage load here because we actually do update
 			# the imported source, and don't want needless imports to interfere
 			# with `make` caching.
