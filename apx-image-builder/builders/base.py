@@ -8,6 +8,7 @@ import select
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import urllib.parse
 from pathlib import Path, PurePath
 from typing import (IO, Any, Callable, Dict, List, NoReturn, Optional, Sequence, Tuple, Union, cast)
@@ -28,6 +29,19 @@ class BuildPaths(object):
 		self.user_sources = user_sources
 		self.build_root = build_root
 		self.build = build_root
+		if not self.build_root.exists():
+			self.build_root.mkdir(parents=True, exist_ok=True)
+			with open(self.build_root / 'CACHEDIR.TAG', 'w') as fd:
+				fd.write(
+				    textwrap.dedent(
+				        '''
+				Signature: 8a477f597d28d172789f06886806bc55
+				# This file is a cache directory tag created by apx-image-builder.
+				# For information about cache directory tags, see:
+				#	http://bford.info/cachedir/
+				'''
+				    ).lstrip()
+				)
 		if module is not None:
 			self.build = self.build_root / module
 			self.build.mkdir(parents=True, exist_ok=True)
@@ -493,12 +507,11 @@ class Patcher(object):
 	    *,
 	    quiet: Optional[bool] = None,
 	) -> bool:
-		patchset = [Path(patch) for patch in patchset]
-		len(patchset)
+		patchset = list(patchset)
 		prefix_fmt = '{serial:04d}_'
 		changed = False
 		for patch in patchset:
-			target = self.cache_dir / (prefix_fmt.format(serial=self.sequence_number) + str(patch.name))
+			target = self.cache_dir / (prefix_fmt.format(serial=self.sequence_number) + str(Path(patch).name))
 			self.sequence_number += 1
 			if import_source(PATHS, LOGGER, ARGS, patch, target, quiet=quiet):
 				changed = True
