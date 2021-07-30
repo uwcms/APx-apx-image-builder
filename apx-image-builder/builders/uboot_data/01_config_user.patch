@@ -1,0 +1,16 @@
+--- a/include/configs/xilinx_zynqmp.h
++++ b/include/configs/xilinx_zynqmp.h
+@@ -264,4 +264,5 @@
+ 
+ #define CONFIG_BOARD_EARLY_INIT_F
+ 
++#include <config_user.h>
+ #endif /* __XILINX_ZYNQMP_H */
+--- a/include/configs/zynq-common.h
++++ b/include/configs/zynq-common.h
+@@ -282,4 +282,5 @@
+ 
+ #define CONFIG_SYS_UBOOT_START	CONFIG_SYS_TEXT_BASE
+ 
++#include <config_user.h>
+ #endif /* __CONFIG_ZYNQ_COMMON_H */

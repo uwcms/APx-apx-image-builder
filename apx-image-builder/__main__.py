@@ -238,7 +238,7 @@ def check_conditions() -> List[str]:
 			if not STAGES[builder_name][stage_name].check(BUILD_PATHS.respecialize(builder_name)):
 				LOGGER.error('Conditions not met for {builder}:{stage}'.format(builder=builder_name, stage=stage_name))
 				conditions_failed_for.append(builder_name + ':' + stage_name)
-		except StepFailedError as e:
+		except StepFailedError:
 			conditions_failed_for.append(builder_name + ':' + stage_name)
 			LOGGER.error('Check failed for {builder}:{stage}'.format(builder=builder_name, stage=stage_name))
 	return conditions_failed_for
