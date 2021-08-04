@@ -102,7 +102,7 @@ builders:
     # These files should be in the sources directory.
     # They will be applied with `patch -tNp1`
     #patches: []
-  uboot:
+  'u-boot':
     # The url to fetch the U-Boot source tarball.
     # file://... is valid.
     #uboot_sourceurl: '...'
