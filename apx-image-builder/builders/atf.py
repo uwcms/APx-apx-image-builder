@@ -13,7 +13,6 @@ from . import base
 
 class ATFBuilder(base.BaseBuilder):
 	NAME: str = 'atf'
-	statefile: Optional[base.JSONStateFile] = None
 	makeflags: List[str]
 
 	@classmethod
@@ -39,9 +38,6 @@ Stages available:
 	def check(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> bool:
 		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
 			return True  # We're bypassed.
-
-		if self.statefile is None:
-			self.statefile = base.JSONStateFile(PATHS.build / '.state.json')
 
 		check_ok: bool = True
 		if self.COMMON_CONFIG.get('zynq_series', '') != 'zynqmp':
@@ -73,32 +69,32 @@ Stages available:
 		if base.check_bypass(STAGE, PATHS, LOGGER):
 			return  # We're bypassed.
 
-		assert self.statefile is not None
+		statefile = base.JSONStateFile(PATHS.build / '.state.json')
 		sourceurl: Optional[str] = self.BUILDER_CONFIG.get('atf_sourceurl', None)
 		if sourceurl is None:
 			sourceurl = 'https://github.com/Xilinx/arm-trusted-firmware/archive/refs/tags/{tag}.tar.gz'.format(
 			    tag=self.BUILDER_CONFIG['atf_tag']
 			)
 		if base.import_source(PATHS, LOGGER, self.ARGS, sourceurl, PATHS.build / 'atf.tar.gz'):
-			with self.statefile as state:
+			with statefile as state:
 				state['tree_ready'] = False
 
 	def prepare(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
 		if base.check_bypass(STAGE, PATHS, LOGGER):
 			return  # We're bypassed.
 
-		assert self.statefile is not None
+		statefile = base.JSONStateFile(PATHS.build / '.state.json')
 		atfdir = PATHS.build / 'atf'
 		patcher = base.Patcher(PATHS.build / 'patches')
 		if patcher.import_patches(PATHS, LOGGER, self.ARGS, self.BUILDER_CONFIG.get('patches', [])):
-			with self.statefile as state:
+			with statefile as state:
 				state['tree_ready'] = False
-		if self.statefile.state.get('tree_ready', False):
+		if statefile.state.get('tree_ready', False):
 			LOGGER.info('The ATF source tree has already been extracted.  Skipping.')
 		else:
 			base.untar(PATHS, LOGGER, PATHS.build / 'atf.tar.gz', atfdir)
 			patcher.apply(PATHS, LOGGER, atfdir)
-			with self.statefile as state:
+			with statefile as state:
 				state['tree_ready'] = True
 
 	def build(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:

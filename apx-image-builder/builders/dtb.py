@@ -15,7 +15,6 @@ from . import base
 
 class DTBBuilder(base.BaseBuilder):
 	NAME: str = 'dtb'
-	statefile: Optional[base.JSONStateFile] = None
 
 	def update_config(self, config: Dict[str, Any], ARGS: argparse.Namespace) -> None:
 		super().update_config(config, ARGS)
@@ -48,9 +47,6 @@ Stages available:
 		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
 			return True  # We're bypassed.
 
-		if self.statefile is None:
-			self.statefile = base.JSONStateFile(PATHS.build / '.state.json')
-
 		check_ok: bool = True
 		if STAGE.name in (
 		    'fetch', 'prepare') and 'dtg_tag' not in self.BUILDER_CONFIG and 'dtg_sourceurl' not in self.BUILDER_CONFIG:
@@ -67,41 +63,41 @@ Stages available:
 		if base.check_bypass(STAGE, PATHS, LOGGER):
 			return  # We're bypassed.
 
-		assert self.statefile is not None
+		statefile = base.JSONStateFile(PATHS.build / '.state.json')
 		sourceurl: Optional[str] = self.BUILDER_CONFIG.get('dtg_sourceurl', None)
 		if sourceurl is None:
 			sourceurl = 'https://github.com/Xilinx/device-tree-xlnx/archive/refs/tags/{tag}.tar.gz'.format(
 			    tag=self.BUILDER_CONFIG['dtg_tag']
 			)
 		if base.import_source(PATHS, LOGGER, self.ARGS, sourceurl, PATHS.build / 'dtg.tar.gz'):
-			with self.statefile as state:
+			with statefile as state:
 				state['tree_ready'] = False
 
 	def prepare(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
 		if base.check_bypass(STAGE, PATHS, LOGGER):
 			return  # We're bypassed.
 
-		assert self.statefile is not None
+		statefile = base.JSONStateFile(PATHS.build / '.state.json')
 
 		# We'll need the XSA
 		if base.import_source(PATHS, LOGGER, self.ARGS, 'system.xsa', PATHS.build / 'system.xsa'):
-			with self.statefile as state:
+			with statefile as state:
 				state['dts_generated'] = False
 		patcher = base.Patcher(PATHS.build / 'patches')
 		if patcher.import_patches(PATHS, LOGGER, self.ARGS, self.BUILDER_CONFIG.get('patches', [])):
-			with self.statefile as state:
+			with statefile as state:
 				state['dts_generated'] = False
 
 		# We'll need the DTG source repository.
-		if not self.statefile.state.get('tree_ready', False):
+		if not statefile.state.get('tree_ready', False):
 			base.untar(PATHS, LOGGER, PATHS.build / 'dtg.tar.gz', PATHS.build / 'dtg')
 			patcher.apply(PATHS, LOGGER, PATHS.build / 'dtg')
-			with self.statefile as state:
+			with statefile as state:
 				state['tree_ready'] = True
 
 		# We'll need to generate the automatic dts files.
 		dtsdir = PATHS.build / 'dts'
-		if self.statefile.state.get('dts_generated', False):
+		if statefile.state.get('dts_generated', False):
 			LOGGER.info('The automatic dts files have already been generated.')
 		else:
 			workdir = tempfile.TemporaryDirectory(prefix='xsi_workdir')
@@ -129,7 +125,7 @@ Stages available:
 				)
 			except subprocess.CalledProcessError:
 				base.fail(LOGGER, 'Unable to generate automatic dts files.')
-			with self.statefile as state:
+			with statefile as state:
 				state['dts_generated'] = True
 
 			shutil.move(str(Path(workdir.name) / 'dts'), dtsdir)

@@ -18,6 +18,7 @@ class KernelBuilder(base.BaseBuilder):
 	NAME: str = 'kernel'
 	kbuild_args: List[str]
 	target_arch: str
+	cross_compile: str
 	statefile: Optional[base.JSONStateFile] = None
 
 	def update_config(self, config: Dict[str, Any], ARGS: argparse.Namespace):
@@ -98,9 +99,6 @@ file will be output as kernel.config.built.
 		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
 			return True  # We're bypassed.  Our checks don't matter.
 
-		if self.statefile is None:
-			self.statefile = base.JSONStateFile(PATHS.build / '.state.json')
-
 		check_ok: bool = True
 		if STAGE.name in (
 		    'fetch',
@@ -128,29 +126,16 @@ file will be output as kernel.config.built.
 			)
 			return False
 		else:
-			cross_compile = [x.split('=', 1)[-1] for x in self.kbuild_args if x.startswith('CROSS_COMPILE=')][0]
-			if not shutil.which(cross_compile + 'gcc'):
+			self.cross_compile = [x.split('=', 1)[-1] for x in self.kbuild_args if x.startswith('CROSS_COMPILE=')][0]
+			if not shutil.which(self.cross_compile + 'gcc'):
 				LOGGER.error(
 				    'Unable to locate `{cross_compile}gcc`.  Did you source the Vivado environment files?'.format(
-				        cross_compile=cross_compile
+				        cross_compile=self.cross_compile
 				    )
 				)
 				check_ok = False
 		self.target_arch = [arg.split('=', 1)[1] for arg in self.kbuild_args if arg.startswith('ARCH=')][0]
-		cross_compile = [arg.split('=', 1)[1] for arg in self.kbuild_args if arg.startswith('CROSS_COMPILE=')][0]
-		with self.statefile as state:
-			if state.setdefault('target_arch', self.target_arch) != self.target_arch:
-				LOGGER.error(
-				    'The existing workspace has ARCH={prepared}.  You have requested ARCH={target}.  Please run distclean.'
-				    .format(prepared=state['target_arch'], target=self.target_arch)
-				)
-				check_ok = False
-			if state.setdefault('cross_compile', cross_compile) != cross_compile:
-				LOGGER.error(
-				    'The existing workspace has CROSS_COMPILE={prepared}.  You have requested CROSS_COMPILE={target}.  Please run distclean.'
-				    .format(prepared=state['cross_compile'], target=cross_compile)
-				)
-				check_ok = False
+		self.cross_compile = [arg.split('=', 1)[1] for arg in self.kbuild_args if arg.startswith('CROSS_COMPILE=')][0]
 		# TODO: More checks.
 		return check_ok
 
@@ -158,7 +143,7 @@ file will be output as kernel.config.built.
 		if base.check_bypass(STAGE, PATHS, LOGGER):
 			return  # We're bypassed.
 
-		assert self.statefile is not None
+		statefile = base.JSONStateFile(PATHS.build / '.state.json')
 		sourceurl: Optional[str] = self.BUILDER_CONFIG.get('kernel_sourceurl', None)
 		if sourceurl is None:
 			sourceurl = 'https://github.com/Xilinx/linux-xlnx/archive/refs/tags/{tag}.tar.gz'.format(
@@ -166,25 +151,40 @@ file will be output as kernel.config.built.
 			)
 
 		if base.import_source(PATHS, LOGGER, self.ARGS, sourceurl, PATHS.build / 'linux.tar.gz'):
-			with self.statefile as state:
+			with statefile as state:
 				state['tree_ready'] = False
 
 	def prepare(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
 		if base.check_bypass(STAGE, PATHS, LOGGER):
 			return  # We're bypassed.
 
-		assert self.statefile is not None
+		statefile = base.JSONStateFile(PATHS.build / '.state.json')
+
+		with statefile as state:
+			if state.setdefault('target_arch', self.target_arch) != self.target_arch:
+				base.fail(
+				    LOGGER,
+				    'The existing workspace has ARCH={prepared}.  You have requested ARCH={target}.  Please run distclean.'
+				    .format(prepared=state['target_arch'], target=self.target_arch)
+				)
+			if state.setdefault('cross_compile', self.cross_compile) != self.cross_compile:
+				base.fail(
+				    LOGGER,
+				    'The existing workspace has CROSS_COMPILE={prepared}.  You have requested CROSS_COMPILE={target}.  Please run distclean.'
+				    .format(prepared=state['cross_compile'], target=self.cross_compile)
+				)
+
 		linuxdir = PATHS.build / 'linux'
 		patcher = base.Patcher(PATHS.build / 'patches')
 		if patcher.import_patches(PATHS, LOGGER, self.ARGS, self.BUILDER_CONFIG.get('patches', [])):
-			with self.statefile as state:
+			with statefile as state:
 				state['tree_ready'] = False
-		if self.statefile.state.get('tree_ready', False):
+		if statefile.state.get('tree_ready', False):
 			LOGGER.info('The linux source tree has already been extracted.  Skipping.')
 		else:
 			base.untar(PATHS, LOGGER, 'linux.tar.gz', PATHS.build / 'linux')
 			patcher.apply(PATHS, LOGGER, PATHS.build / 'linux')
-			with self.statefile as state:
+			with statefile as state:
 				state['tree_ready'] = True
 
 		if base.import_source(PATHS, LOGGER, self.ARGS, 'kernel.config', PATHS.build / 'user.config',
@@ -193,9 +193,9 @@ file will be output as kernel.config.built.
 			# the imported source, and don't want needless imports to interfere
 			# with `make` caching.
 			user_config_hash = base.hash_file('sha256', open(PATHS.build / 'user.config', 'rb'))
-			if self.statefile.state.get('user_config_hash', '') != user_config_hash:
+			if statefile.state.get('user_config_hash', '') != user_config_hash:
 				shutil.copyfile(PATHS.build / 'user.config', PATHS.build / 'linux/.config')
-				with self.statefile as state:
+				with statefile as state:
 					state['user_config_hash'] = user_config_hash
 					state['built_config_hash'] = None
 
@@ -214,8 +214,8 @@ file will be output as kernel.config.built.
 			base.fail(LOGGER, 'Kernel `defconfig` returned with an error')
 		LOGGER.info('Finished `defconfig`.')
 
-		assert self.statefile is not None
-		with self.statefile as state:
+		statefile = base.JSONStateFile(PATHS.build / '.state.json')
+		with statefile as state:
 			state['user_config_hash'] = None  # disable any "caching" next run
 
 		# Provide our kernel config as an output.
@@ -240,8 +240,8 @@ file will be output as kernel.config.built.
 			base.fail(LOGGER, 'Kernel `oldconfig` returned with an error')
 		LOGGER.info('Finished `oldconfig`.')
 
-		assert self.statefile is not None
-		with self.statefile as state:
+		statefile = base.JSONStateFile(PATHS.build / '.state.json')
+		with statefile as state:
 			state['user_config_hash'] = None  # disable any "caching" next run
 
 		# Provide our kernel config as an output.
@@ -273,8 +273,8 @@ file will be output as kernel.config.built.
 			base.fail(LOGGER, 'Kernel `nconfig` returned with an error')
 		LOGGER.info('Finished `nconfig`.')
 
-		assert self.statefile is not None
-		with self.statefile as state:
+		statefile = base.JSONStateFile(PATHS.build / '.state.json')
+		with statefile as state:
 			state['user_config_hash'] = None  # disable any "caching" next run
 
 		# Provide our kernel config as an output.
@@ -287,14 +287,14 @@ file will be output as kernel.config.built.
 		if base.check_bypass(STAGE, PATHS, LOGGER):
 			return  # We're bypassed.
 
-		assert self.statefile is not None
+		statefile = base.JSONStateFile(PATHS.build / '.state.json')
 		linuxdir = PATHS.build / 'linux'
 
 		if not (linuxdir / '.config').exists():
 			base.fail(LOGGER, 'No kernel configuration file was found.  Use kernel:defconfig to generate one.')
 
 		built_config_hash = base.hash_file('sha256', open(linuxdir / '.config', 'rb'))
-		if self.statefile.state.get('built_config_hash', None) == built_config_hash:
+		if statefile.state.get('built_config_hash', None) == built_config_hash:
 			LOGGER.info('We have already run `olddefconfig` on this config file.')
 		else:
 			LOGGER.info('Running `olddefconfig` to ensure config consistency.')
@@ -303,7 +303,7 @@ file will be output as kernel.config.built.
 			except subprocess.CalledProcessError:
 				base.fail(LOGGER, 'Kernel `olddefconfig` returned with an error')
 			LOGGER.info('Finished `olddefconfig`.')
-			with self.statefile as state:
+			with statefile as state:
 				state['built_config_hash'] = base.hash_file('sha256', open(linuxdir / '.config', 'rb'))
 
 		# Provide our final, used kernel config as an output, separate from the user-defined one.

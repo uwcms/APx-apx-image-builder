@@ -59,9 +59,6 @@ Stages available:
 		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
 			return True  # We're bypassed.
 
-		if self.statefile is None:
-			self.statefile = base.JSONStateFile(PATHS.build / '.state.json')
-
 		check_ok: bool = True
 		if STAGE.name in ('fetch', 'prepare'
 		                  ) and 'uboot_tag' not in self.BUILDER_CONFIG and 'uboot_sourceurl' not in self.BUILDER_CONFIG:
@@ -88,34 +85,34 @@ Stages available:
 		if base.check_bypass(STAGE, PATHS, LOGGER):
 			return  # We're bypassed.
 
-		assert self.statefile is not None
+		statefile = base.JSONStateFile(PATHS.build / '.state.json')
 		sourceurl: Optional[str] = self.BUILDER_CONFIG.get('uboot_sourceurl', None)
 		if sourceurl is None:
 			sourceurl = 'https://github.com/Xilinx/u-boot-xlnx/archive/refs/tags/{tag}.tar.gz'.format(
 			    tag=self.BUILDER_CONFIG['uboot_tag']
 			)
 		if base.import_source(PATHS, LOGGER, self.ARGS, sourceurl, 'u-boot.tar.gz'):
-			with self.statefile as state:
+			with statefile as state:
 				state['tree_ready'] = False
 
 	def prepare(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
 		if base.check_bypass(STAGE, PATHS, LOGGER):
 			return  # We're bypassed.
 
-		assert self.statefile is not None
+		statefile = base.JSONStateFile(PATHS.build / '.state.json')
 		ubdir = PATHS.build / 'uboot'
 		patcher = base.Patcher(PATHS.build / 'patches')
 		patches = ['builtin:///uboot_data/01_config_user.patch']
 		patches.extend(self.BUILDER_CONFIG.get('patches', []))
 		if patcher.import_patches(PATHS, LOGGER, self.ARGS, patches):
-			with self.statefile as state:
+			with statefile as state:
 				state['tree_ready'] = False
-		if self.statefile.state.get('tree_ready', False):
+		if statefile.state.get('tree_ready', False):
 			LOGGER.info('The U-Boot source tree has already been extracted.  Skipping.')
 		else:
 			base.untar(PATHS, LOGGER, PATHS.build / 'u-boot.tar.gz', PATHS.build / 'uboot')
 			patcher.apply(PATHS, LOGGER, PATHS.build / 'uboot')
-			with self.statefile as state:
+			with statefile as state:
 				state['tree_ready'] = True
 
 		if base.import_source(PATHS, LOGGER, self.ARGS, 'u-boot.config', PATHS.build / '.config',
@@ -124,9 +121,9 @@ Stages available:
 			# the imported source, and don't want needless imports to interfere
 			# with `make` caching.
 			user_config_hash = base.hash_file('sha256', open(PATHS.build / '.config', 'rb'))
-			if self.statefile.state.get('user_config_hash', '') != user_config_hash:
+			if statefile.state.get('user_config_hash', '') != user_config_hash:
 				shutil.copyfile(PATHS.build / '.config', ubdir / '.config')
-				with self.statefile as state:
+				with statefile as state:
 					state['user_config_hash'] = user_config_hash
 
 		if base.import_source(PATHS, LOGGER, self.ARGS, 'u-boot.config_user.h', ubdir / 'include/config_user.h'):

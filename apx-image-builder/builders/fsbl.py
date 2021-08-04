@@ -43,9 +43,6 @@ Stages available:
 		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
 			return True  # We're bypassed.
 
-		if self.statefile is None:
-			self.statefile = base.JSONStateFile(PATHS.build / '.state.json')
-
 		check_ok: bool = True
 		if not shutil.which('vivado'):
 			LOGGER.error('Vivado not found. Please source your Vivado settings.sh file.')
@@ -56,17 +53,17 @@ Stages available:
 		if base.check_bypass(STAGE, PATHS, LOGGER):
 			return  # We're bypassed.
 
-		assert self.statefile is not None
+		statefile = base.JSONStateFile(PATHS.build / '.state.json')
 		# We'll need the XSA
 		if base.import_source(PATHS, LOGGER, self.ARGS, 'system.xsa', PATHS.build / 'system.xsa'):
-			with self.statefile as state:
+			with statefile as state:
 				state['project_generated'] = False
 		patcher = base.Patcher(PATHS.build / 'patches')
 		if patcher.import_patches(PATHS, LOGGER, self.ARGS, self.BUILDER_CONFIG.get('patches', [])):
-			with self.statefile as state:
+			with statefile as state:
 				state['project_generated'] = False
 
-		if self.statefile.state.get('project_generated', False):
+		if statefile.state.get('project_generated', False):
 			LOGGER.info('The FSBL project has already been generated.  Skipping.')
 		else:
 			LOGGER.debug('Removing any existing FSBL project.')
@@ -89,7 +86,7 @@ Stages available:
 			    cwd=PATHS.build / 'workspace',
 			)
 			patcher.apply(PATHS, LOGGER, PATHS.build / 'workspace/fsbl')
-			with self.statefile as state:
+			with statefile as state:
 				state['project_generated'] = True
 
 	def build(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
