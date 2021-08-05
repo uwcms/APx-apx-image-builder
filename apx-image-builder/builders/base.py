@@ -210,6 +210,8 @@ def run(
 		intmp.flush()
 		intmp.seek(0, os.SEEK_SET)
 		kwargs['stdin'] = intmp
+	if 'cwd' not in kwargs:
+		kwargs['cwd'] = PATHS.build
 
 	if isinstance(cmdargs, (str, bytes, PurePath)):
 		LOGGER.log(DETAIL_LOGLEVEL, f'Running {cmdargs!r}...')
