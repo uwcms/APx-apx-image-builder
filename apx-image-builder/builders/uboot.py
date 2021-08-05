@@ -207,7 +207,7 @@ Stages available:
 		except subprocess.CalledProcessError:
 			base.fail(LOGGER, '`make` returned with an error')
 
-		# Provide PMU firmware ELF as an output.
+		# Provide uboot ELF as an output.
 		ub = ubdir / 'u-boot.elf'
 		if not ub.exists():
 			base.fail(LOGGER, 'u-boot.elf not found after build.')

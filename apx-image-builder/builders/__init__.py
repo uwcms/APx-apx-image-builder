@@ -5,6 +5,7 @@ from .atf import ATFBuilder
 from .dtb import DTBBuilder
 from .uboot import UBootBuilder
 from .kernel import KernelBuilder
+from .rootfs import RootfsBuilder
 
 # Keep this list in dependency order as much as possible, to minimize the amount
 # of intermixing of steps between builders that results from dependency
@@ -16,4 +17,5 @@ all_builders = [
     DTBBuilder,
     UBootBuilder,
     KernelBuilder,
+	RootfsBuilder,
 ]

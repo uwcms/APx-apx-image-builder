@@ -143,3 +143,16 @@ builders:
     # These files should be in the sources directory.
     # They will be applied with `patch -tNp1`
     #patches: []
+  rootfs:
+    # The url to fetch the buildroot source tarball.
+    # file://... is valid.
+    #buildroot_sourceurl: '...'
+
+    # The buildroot source version to fetch.
+    # Ignored if buildroot_sourceurl is set.
+    buildroot_version: 2021.02.3
+
+    # A list of user-supplied patches to apply before building.
+    # These files should be in the sources directory.
+    # They will be applied with `patch -tNp1`
+    #patches: []
