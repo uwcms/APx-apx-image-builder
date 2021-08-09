@@ -166,7 +166,7 @@ class BaseBuilder(object):
 		'''
 		self.STAGES = {
 		    'distclean': Stage(self, 'distclean', None, self.__distclean, include_in_all=False),
-		    'clean': Stage(self, 'distclean', None, self.__distclean, include_in_all=False),
+		    'clean': Stage(self, 'clean', None, self.__distclean, include_in_all=False),
 		}
 
 	def __distclean(self, STAGE: Stage, PATHS: BuildPaths, LOGGER: logging.Logger) -> None:
@@ -348,8 +348,10 @@ def import_source(
         ARGS: argparse.Namespace,
         source_url: Union[str, Path],
         target: Union[str, Path],
+        *,
         quiet: Optional[bool] = None,
         ignore_timestamps: bool = False,
+        optional: bool = False,
 ) -> bool:
 	comprehensible_source_url = source_url
 
@@ -415,7 +417,14 @@ def import_source(
 	source_url = PATHS.user_sources / Path(source_url)
 
 	if not source_url.exists():
-		fail(LOGGER, f'Unable to locate source file {comprehensible_source_url!s}')
+		if not optional:
+			fail(LOGGER, f'Unable to locate source file {comprehensible_source_url!s}')
+		else:
+			if not quiet:
+				LOGGER.info(f'Importing optional source file {comprehensible_source_url!s} as missing.')
+			target_exists = target.exists()
+			target.unlink(missing_ok=True)
+			return target_exists
 
 	changed = False
 	if not target.exists():

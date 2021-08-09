@@ -135,7 +135,7 @@ Stages available:
 			base.fail(LOGGER, '`make` returned with an error')
 
 		# Provide buildroot image as an output.
-		for image_name in ('rootfs.tar.gz', 'rootfs.cpio'):
+		for image_name in ('rootfs.tar.gz', 'rootfs.cpio', 'rootfs.cpio.uboot'):
 			image = PATHS.build / 'buildroot/output/images' / image_name
 			if not image.exists():
 				base.fail(LOGGER, image_name + ' not found after build.')
