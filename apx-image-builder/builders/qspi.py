@@ -8,7 +8,7 @@ import subprocess
 import textwrap
 import urllib.parse
 from pathlib import Path
-from typing import IO, Dict, List, Optional, Tuple
+from typing import Any, IO, Dict, List, Optional, Tuple
 
 from . import base
 
@@ -28,45 +28,39 @@ Stages available:
 
 	def instantiate_stages(self) -> None:
 		super().instantiate_stages()
-		self.STAGES['build'] = base.Stage(
-		    self,
-		    'build',
-		    self.check,
-		    self.build,
-		    requires=[
-		        self.NAME + ':clean',
-		        self.NAME + ':distclean',
-		        'fsbl:build',
-		        'pmu:build',
-		        'atf:build',
-		        'dtb:build',
-		        'u-boot:build',
-		        'kernel:build',
-		        'rootfs:build',
-		    ]
-		)
+		requirements: List[str] = [
+		    self.NAME + ':clean', self.NAME + ':distclean', 'fsbl:build', 'dtb:build', 'u-boot:build', 'kernel:build',
+		    'rootfs:build'
+		]
 
-	def check(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> bool:
-		if base.check_bypass(STAGE, PATHS, LOGGER, extract=False):
+		if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp':
+			requirements.extend(['pmu:build', 'atf:build'])
+
+		self.STAGES['build'] = base.Stage(self, 'build', self.check, self.build, requires=requirements)
+
+	def check(self, STAGE: base.Stage) -> bool:
+		if base.check_bypass(STAGE, extract=False):
 			return True  # We're bypassed.
 
 		check_ok: bool = True
 		if not shutil.which('bootgen'):
-			LOGGER.error(f'Unable to locate `bootgen`.  Did you source the Vivado environment files?')
+			STAGE.logger.error(f'Unable to locate `bootgen`.  Did you source the Vivado environment files?')
 			check_ok = False
 		if not shutil.which('mkimage'):
-			LOGGER.error(f'Unable to locate `mkimage`.  Is uboot-tools (CentOS) or u-boot-tools (ubuntu) installed?')
+			STAGE.logger.error(
+			    f'Unable to locate `mkimage`.  Is uboot-tools (CentOS) or u-boot-tools (ubuntu) installed?'
+			)
 			check_ok = False
 		if not shutil.which('unzip'):
-			LOGGER.error(f'Unable to locate `unzip`.')
+			STAGE.logger.error(f'Unable to locate `unzip`.')
 			check_ok = False
 		if not shutil.which('gzip'):
-			LOGGER.error(f'Unable to locate `gzip`.')
+			STAGE.logger.error(f'Unable to locate `gzip`.')
 			check_ok = False
 		return check_ok
 
-	def build(self, STAGE: base.Stage, PATHS: base.BuildPaths, LOGGER: logging.Logger) -> None:
-		if base.check_bypass(STAGE, PATHS, LOGGER):
+	def build(self, STAGE: base.Stage) -> None:
+		if base.check_bypass(STAGE):
 			return  # We're bypassed.
 
 		dtb_address = self.BUILDER_CONFIG.get('dtb_address', 0x00100000)
@@ -83,11 +77,11 @@ Stages available:
 		}}
 		'''
 		).format(dtb_address=dtb_address)
-		with open(PATHS.build / 'boot.bif', 'w') as fd:
+		with open(self.PATHS.build / 'boot.bif', 'w') as fd:
 			fd.write(bif)
 
-		base.import_source(PATHS, LOGGER, self.ARGS, 'qspi.boot.scr', 'boot.scr', optional=True)
-		LOGGER.info('Importing prior build products...')
+		base.import_source(STAGE, 'qspi.boot.scr', 'boot.scr', optional=True)
+		STAGE.logger.info('Importing prior build products...')
 		built_sources = [
 		    'fsbl:fsbl.elf',
 		    'pmu:pmufw.elf',
@@ -98,25 +92,23 @@ Stages available:
 		    'rootfs:rootfs.cpio.uboot',
 		]
 		for builder, source in (x.split(':', 1) for x in built_sources):
-			base.import_source(
-			    PATHS, LOGGER, self.ARGS, PATHS.respecialize(builder).output / source, source, quiet=True
-			)
+			base.import_source(STAGE, self.PATHS.respecialize(builder).output / source, source, quiet=True)
 
-		LOGGER.info('Parsing flash partition scheme from dts')
+		STAGE.logger.info('Parsing flash partition scheme from dts')
 		try:
-			base.run(PATHS, LOGGER, ['dtc', '-I', 'dtb', '-O', 'dts', 'system.dtb', '-o', 'system.dts'])
+			base.run(STAGE, ['dtc', '-I', 'dtb', '-O', 'dts', 'system.dtb', '-o', 'system.dts'])
 		except subprocess.CalledProcessError:
-			base.fail(LOGGER, '`dtc` returned with an error')
-		partition_spec = parse_dts_partitions(open(PATHS.build / 'system.dts', 'r'))
+			base.fail(STAGE.logger, '`dtc` returned with an error')
+		partition_spec = parse_dts_partitions(open(self.PATHS.build / 'system.dts', 'r'))
 
-		bootscr = PATHS.build / 'boot.scr'
+		bootscr = self.PATHS.build / 'boot.scr'
 		if not bootscr.exists():
-			LOGGER.info('Generating boot.scr automatically.')
+			STAGE.logger.info('Generating boot.scr automatically.')
 			kernel_address: Tuple[int, int, int] = partition_spec.get('kernel', (0, 0, 0))
 			rootfs_address: Tuple[int, int, int] = partition_spec.get('rootfs', (0, 0, 0))
 			if not kernel_address[2] or not rootfs_address[2]:
 				base.fail(
-				    LOGGER,
+				    STAGE.logger,
 				    'Unable to find "kernel" and "rootfs" partitions in the device tree.  Please manually supply `qspi.boot.scr`.'
 				)
 			with open(bootscr, 'w') as fd:
@@ -130,44 +122,42 @@ Stages available:
 				    format(kernel_address=kernel_address, rootfs_address=rootfs_address, dtb_address=dtb_address) + '\n'
 				)
 
-		base.import_source(PATHS, LOGGER, self.ARGS, 'system.xsa', 'system.xsa')
-		xsadir = PATHS.build / 'xsa'
+		base.import_source(STAGE, 'system.xsa', 'system.xsa')
+		xsadir = self.PATHS.build / 'xsa'
 		shutil.rmtree(xsadir, ignore_errors=True)
 		xsadir.mkdir()
-		LOGGER.info('Extracting XSA...')
+		STAGE.logger.info('Extracting XSA...')
 		try:
-			base.run(PATHS, LOGGER, ['unzip', '-x', '../system.xsa'], cwd=xsadir)
+			base.run(STAGE, ['unzip', '-x', '../system.xsa'], cwd=xsadir)
 		except subprocess.CalledProcessError:
-			base.fail(LOGGER, '`unzip` returned with an error')
+			base.fail(STAGE.logger, '`unzip` returned with an error')
 		bitfiles = list(xsadir.glob('*.bit'))
 		if len(bitfiles) != 1:
-			base.fail(LOGGER, f'Expected exactly one bitfile in the XSA.  Found {bitfiles!r}')
-		shutil.move(str(bitfiles[0].resolve()), PATHS.build / 'system.bit')
+			base.fail(STAGE.logger, f'Expected exactly one bitfile in the XSA.  Found {bitfiles!r}')
+		shutil.move(str(bitfiles[0].resolve()), self.PATHS.build / 'system.bit')
 
-		LOGGER.info('Generating BOOT.BIN')
+		STAGE.logger.info('Generating BOOT.BIN')
 		try:
 			base.run(
-			    PATHS, LOGGER, [
+			    STAGE, [
 			        'bootgen', '-o', 'BOOT.BIN', '-w', 'on', '-image', 'boot.bif', '-arch',
 			        self.COMMON_CONFIG['zynq_series']
 			    ]
 			)
 		except subprocess.CalledProcessError:
-			base.fail(LOGGER, '`bootgen` returned with an error')
+			base.fail(STAGE.logger, '`bootgen` returned with an error')
 
-		LOGGER.info('Extracting kernel image')
+		STAGE.logger.info('Extracting kernel image')
 		try:
-			base.run(PATHS, LOGGER, ['gzip', '-d', '-f', 'Image.gz'])
+			base.run(STAGE, ['gzip', '-d', '-f', 'Image.gz'])
 		except subprocess.CalledProcessError:
-			base.fail(LOGGER, '`gzip` returned with an error')
+			base.fail(STAGE.logger, '`gzip` returned with an error')
 
-		LOGGER.info('Generating boot.scr FIT image')
+		STAGE.logger.info('Generating boot.scr FIT image')
 		try:
-			base.run(
-			    PATHS, LOGGER, ['mkimage', '-c', 'none', '-A', 'arm', '-T', 'script', '-d', 'boot.scr', 'boot.scr.ub']
-			)
+			base.run(STAGE, ['mkimage', '-c', 'none', '-A', 'arm', '-T', 'script', '-d', 'boot.scr', 'boot.scr.ub'])
 		except subprocess.CalledProcessError:
-			base.fail(LOGGER, '`mkimage` returned with an error')
+			base.fail(STAGE.logger, '`mkimage` returned with an error')
 
 		# Provide our outputs
 		outputs = [
@@ -177,17 +167,17 @@ Stages available:
 		    ('rootfs.cpio.uboot', 'rootfs.ub', 'rootfs'),
 		]
 		for outputfn, file, _ in outputs:
-			output = PATHS.build / outputfn
+			output = self.PATHS.build / outputfn
 			if not output.exists():
-				base.fail(LOGGER, outputfn + ' not found after build.')
-			shutil.copyfile(output, PATHS.output / file)
+				base.fail(STAGE.logger, outputfn + ' not found after build.')
+			shutil.copyfile(output, self.PATHS.output / file)
 
 		# Let's generate a basic convenient "flash.sh" script.
-		LOGGER.info('Generating flash.sh helper script.')
+		STAGE.logger.info('Generating flash.sh helper script.')
 		partition_files: List[Tuple[int, str]] = []
 		for _, file, partition in outputs:
 			if partition not in partition_spec:
-				LOGGER.info(f'Unable to generate flash.sh: Could not locate {partition} partition.')
+				STAGE.logger.info(f'Unable to generate flash.sh: Could not locate {partition} partition.')
 				from pprint import pprint
 				pprint(partition_spec)
 				partition_files = []
@@ -195,19 +185,17 @@ Stages available:
 			partition_files.append((partition_spec[partition][0], file))
 
 		if partition_files:
-			base.import_source(
-			    PATHS, LOGGER, self.ARGS, 'builtin:///qspi_data/flash.sh', 'flash.template.sh', quiet=True
-			)
-			with open(PATHS.build / 'flash.sh', 'w') as fd:
-				template = open(PATHS.build / 'flash.template.sh', 'r').read()
+			base.import_source(STAGE, 'builtin:///qspi_data/flash.sh', 'flash.template.sh', quiet=True)
+			with open(self.PATHS.build / 'flash.sh', 'w') as fd:
+				template = open(self.PATHS.build / 'flash.template.sh', 'r').read()
 				fd.write(
 				    template.replace(
 				        '###PARTITIONS###',
 				        ' '.join('{0}:{1}'.format(*partpair) for partpair in partition_files),
 				    )
 				)
-			shutil.copyfile(PATHS.build / 'flash.sh', PATHS.output / 'flash.sh')
-			(PATHS.output / 'flash.sh').chmod(0o755)
+			shutil.copyfile(self.PATHS.build / 'flash.sh', self.PATHS.output / 'flash.sh')
+			(self.PATHS.output / 'flash.sh').chmod(0o755)
 
 
 def parse_dts_partitions(fd: IO[str]) -> Dict[str, Tuple[int, int, int]]:

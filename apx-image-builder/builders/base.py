@@ -59,8 +59,8 @@ class Stage(object):
 	# This would work well as a TypedDict, sadly we have to run on python3.6.
 	name: str  # The unqualified stage name.  e.g. 'build'
 	builder: 'BaseBuilder'  # The builder this stage is associated with.
-	_check: Optional[Callable[['Stage', BuildPaths, logging.Logger], bool]]  # Check whether this stage can function.
-	_run: Callable[['Stage', BuildPaths, logging.Logger], None]  # The function to run this stage.
+	_check: Optional[Callable[['Stage'], bool]]  # Check whether this stage can function.
+	_run: Callable[['Stage'], None]  # The function to run this stage.
 	requires: List[str
 	               ]  # Stages that must run if this one runs. (Does not imply 'before' or 'after'.) e.g. 'kernel:build'
 	after: List[
@@ -70,13 +70,14 @@ class Stage(object):
 	    str
 	]  # Specifies that this stage must run before the listed stages. (Does not imply 'requires'.)  e.g. 'kernel:build'
 	include_in_all: bool
+	logger: logging.Logger
 
 	def __init__(
 	    self,
 	    builder: 'BaseBuilder',
 	    name: str,
-	    check: Optional[Callable[['Stage', BuildPaths, logging.Logger], bool]],
-	    run: Callable[['Stage', BuildPaths, logging.Logger], None],
+	    check: Optional[Callable[['Stage'], bool]],
+	    run: Callable[['Stage'], None],
 	    *,
 	    requires: List[str] = [],
 	    after: Optional[List[str]] = None,
@@ -103,23 +104,16 @@ class Stage(object):
 		self.after = after if after is not None else list(requires)
 		self.before = before
 		self.include_in_all = include_in_all
+		self.logger = logging.getLogger('{builder.NAME}:{name}'.format(builder=self.builder, name=self.name))
 
-	def check(self, paths: BuildPaths) -> bool:
+	def check(self) -> bool:
 		if self._check is None:
 			return True
 		else:
-			return self._check(
-			    self,
-			    paths.respecialize(self.builder.NAME),
-			    logging.getLogger('{builder.NAME}:{name}'.format(builder=self.builder, name=self.name)),
-			)
+			return self._check(self)
 
-	def run(self, paths: BuildPaths) -> None:
-		self._run(
-		    self,
-		    paths.respecialize(self.builder.NAME),
-		    logging.getLogger('{builder.NAME}:{name}'.format(builder=self.builder, name=self.name)),
-		)
+	def run(self) -> None:
+		self._run(self)
 
 
 class BaseBuilder(object):
@@ -130,18 +124,16 @@ class BaseBuilder(object):
 	COMMON_CONFIG: Dict[str, Any]
 	BUILDER_CONFIG: Dict[str, Any]
 
-	def __init__(self):
+	def __init__(self, config: Dict[str, Any], paths: BuildPaths, ARGS: argparse.Namespace):
 		if self.NAME == 'NotImplemented':
 			raise NotImplementedError('NAME is not set for ' + str(self.__class__.__name__))
-		self.COMMON_CONFIG = {}
-		self.BUILDER_CONFIG = {}
-
-	def update_config(self, config: Dict[str, Any], ARGS: argparse.Namespace) -> None:
 		self.COMMON_CONFIG = config
 		self.BUILDER_CONFIG = config.get('builders', {}).get(self.NAME, {})
-		if self.BUILDER_CONFIG is None:
+		if self.BUILDER_CONFIG is None:  # Weird yaml artifact if you comment out all mapping values.
 			self.BUILDER_CONFIG = {}
+		self.PATHS = paths.respecialize(self.NAME)
 		self.ARGS = ARGS
+		self.instantiate_stages()
 
 	def prepare_argparse(self, group: argparse._ArgumentGroup) -> None:
 		'''
@@ -169,14 +161,14 @@ class BaseBuilder(object):
 		    'clean': Stage(self, 'clean', None, self.__distclean, include_in_all=False),
 		}
 
-	def __distclean(self, STAGE: Stage, PATHS: BuildPaths, LOGGER: logging.Logger) -> None:
-		LOGGER.debug('Using the default distclean implementation.')
-		LOGGER.info('Deleting build workspace.')
-		shutil.rmtree(PATHS.build, ignore_errors=True)
-		PATHS.build.mkdir(parents=True, exist_ok=True)
-		LOGGER.info('Deleting outputs.')
-		shutil.rmtree(PATHS.output, ignore_errors=True)
-		PATHS.output.mkdir(parents=True, exist_ok=True)
+	def __distclean(self, STAGE: Stage) -> None:
+		STAGE.logger.debug('Using the default distclean implementation.')
+		STAGE.logger.info('Deleting build workspace.')
+		shutil.rmtree(self.PATHS.build, ignore_errors=True)
+		self.PATHS.build.mkdir(parents=True, exist_ok=True)
+		STAGE.logger.info('Deleting outputs.')
+		shutil.rmtree(self.PATHS.output, ignore_errors=True)
+		self.PATHS.output.mkdir(parents=True, exist_ok=True)
 
 
 def fail(logger: logging.Logger, message: str, source: Optional[Exception] = None) -> NoReturn:
@@ -190,8 +182,7 @@ StrOrBytesPath = Union[str, bytes, Path]  # Hacked from python typeshed
 
 
 def run(
-        PATHS: BuildPaths,
-        LOGGER: logging.Logger,
+        STAGE: Stage,
         cmdargs: Union[StrOrBytesPath, Sequence[StrOrBytesPath]],
         check: bool = True,
         CHECK_RAISE: bool = True,
@@ -200,6 +191,9 @@ def run(
         ERROR_LOGLEVEL: int = logging.ERROR,
         **kwargs
 ) -> Tuple[int, bytes]:
+	PATHS = STAGE.builder.PATHS
+	LOGGER = STAGE.logger
+
 	kwargs.setdefault('stdin', subprocess.DEVNULL)  # Change default to "no input accepted".
 	kwargs.setdefault('stdout', subprocess.PIPE)  # Change default to "capture output".
 	kwargs.setdefault('stderr', subprocess.STDOUT)  # Change default to "capture alongside stdout".
@@ -307,14 +301,9 @@ class JSONStateFile(object):
 		self.save()
 
 
-def check_bypass(
-        STAGE: Stage,
-        PATHS: BuildPaths,
-        LOGGER: logging.Logger,
-        *,
-        extract: bool = True,
-        bypass_file: Optional[Union[str, Path]] = None
-) -> bool:
+def check_bypass(STAGE: Stage, *, extract: bool = True, bypass_file: Optional[Union[str, Path]] = None) -> bool:
+	PATHS = STAGE.builder.PATHS
+	LOGGER = STAGE.logger
 	if bypass_file is None:
 		bypass_file = '{builder_name}.bypass.tbz2'.format(builder_name=STAGE.builder.NAME)
 	bypass_file = PATHS.user_sources / bypass_file
@@ -337,15 +326,13 @@ def check_bypass(
 		LOGGER.info('Extracting pre-generated outputs.')
 		shutil.rmtree(PATHS.output, ignore_errors=True)
 		PATHS.output.mkdir()
-		run(PATHS, LOGGER, ['tar', '-xf', bypass_file, '-C', PATHS.output])
+		run(STAGE, ['tar', '-xf', bypass_file, '-C', PATHS.output])
 		bypass_canary.touch()
 	return True
 
 
 def import_source(
-        PATHS: BuildPaths,
-        LOGGER: logging.Logger,
-        ARGS: argparse.Namespace,
+        STAGE: Stage,
         source_url: Union[str, Path],
         target: Union[str, Path],
         *,
@@ -353,6 +340,8 @@ def import_source(
         ignore_timestamps: bool = False,
         optional: bool = False,
 ) -> bool:
+	PATHS = STAGE.builder.PATHS
+	LOGGER = STAGE.logger
 	comprehensible_source_url = source_url
 
 	# If the target is relative, it's relative to the build directory.
@@ -369,14 +358,13 @@ def import_source(
 				LOGGER.info(f'Downloading source file {comprehensible_source_url!s}')
 				try:
 					run(
-					    PATHS,
-					    LOGGER,
+					    STAGE,
 					    ['wget', '-O', str(cachefile.resolve()) + '~', source_url],
-					    stdout=None if ARGS.verbose else subprocess.PIPE,
-					    stderr=None if ARGS.verbose else subprocess.STDOUT,
+					    stdout=None if STAGE.builder.ARGS.verbose else subprocess.PIPE,
+					    stderr=None if STAGE.builder.ARGS.verbose else subprocess.STDOUT,
 					    OUTPUT_LOGLEVEL=logging.NOTSET,
 					)
-				except Exception as e:
+				except Exception:
 					try:
 						cachefile.unlink()
 					except:
@@ -397,7 +385,7 @@ def import_source(
 					data = pkg_resources.resource_string(parsed_sourceurl.netloc or __name__, parsed_sourceurl.path)
 					with open(cachefile, 'wb') as fd:
 						fd.write(data)
-				except ImportError as e:
+				except ImportError:
 					fail(
 					    LOGGER,
 					    'No supported package resource access module installed.  (install the `pkg_resources` python module)'
@@ -461,17 +449,17 @@ def import_source(
 
 
 def untar(
-        PATHS: BuildPaths,
-        LOGGER: logging.Logger,
+        STAGE: Stage,
         source: Union[str, Path],
         target: Union[str, Path],
         *,
         reparent: bool = True,
 ) -> None:
-	# If source or target are relative, they're relative to the build dir.
-	source = PATHS.build / Path(source)
-	target = PATHS.build / Path(target)
+	LOGGER = STAGE.logger
 
+	# If source or target are relative, they're relative to the build dir.
+	source = STAGE.builder.PATHS.build / Path(source)
+	target = STAGE.builder.PATHS.build / Path(target)
 	try:
 		shutil.rmtree(target, ignore_errors=True)
 		target.mkdir(parents=True)
@@ -479,7 +467,7 @@ def untar(
 		fail(LOGGER, f'Unable to clean up {str(target)!r} before extracting archive.')
 
 	try:
-		run(PATHS, LOGGER, ['tar', '-xf', str(source.resolve()), '-C', str(target.resolve())])
+		run(STAGE, ['tar', '-xf', str(source.resolve()), '-C', str(target.resolve())])
 	except subprocess.CalledProcessError:
 		fail(LOGGER, f'Unable to extract source archive {str(source)!r}')
 
@@ -512,9 +500,7 @@ class Patcher(object):
 
 	def import_patches(
 	    self,
-	    PATHS: BuildPaths,
-	    LOGGER: logging.Logger,
-	    ARGS: argparse.Namespace,
+	    STAGE: Stage,
 	    patchset: Sequence[Union[str, Path]],
 	    *,
 	    quiet: Optional[bool] = None,
@@ -525,7 +511,7 @@ class Patcher(object):
 		for patch in patchset:
 			target = self.cache_dir / (prefix_fmt.format(serial=self.sequence_number) + str(Path(patch).name))
 			self.sequence_number += 1
-			if import_source(PATHS, LOGGER, ARGS, patch, target, quiet=quiet):
+			if import_source(STAGE, patch, target, quiet=quiet):
 				changed = True
 			self.patchset.append(target.resolve())
 		for patch in self.cache_dir.glob('*'):
@@ -536,20 +522,16 @@ class Patcher(object):
 
 	def apply(
 	    self,
-	    PATHS: BuildPaths,
-	    LOGGER: logging.Logger,
+	    STAGE: Stage,
 	    target_dir: Union[str, Path],
 	    *,
 	    LOGLEVEL: int = logging.INFO,
 	) -> None:
-		target_dir = PATHS.build / target_dir
+		target_dir = STAGE.builder.PATHS.build / target_dir
 		for i, patch in enumerate(self.patchset):
-			LOGGER.log(LOGLEVEL, f'Applying patch ({i+1}/{len(self.patchset)}) {patch.name!s}')
-			exit, output = run(
-			    PATHS, LOGGER,
-			    ['patch', '-tNp1', '-d', target_dir, '-i', patch.resolve()], CHECK_RAISE=False
-			)
+			STAGE.logger.log(LOGLEVEL, f'Applying patch ({i+1}/{len(self.patchset)}) {patch.name!s}')
+			exit, output = run(STAGE, ['patch', '-tNp1', '-d', target_dir, '-i', patch.resolve()], CHECK_RAISE=False)
 			if exit == 2:
-				fail(LOGGER, '`patch` failed to execute correctly.')
+				fail(STAGE.logger, '`patch` failed to execute correctly.')
 			elif exit == 1:
-				fail(LOGGER, f'Patch {patch.name!s} did not apply correctly.')
+				fail(STAGE.logger, f'Patch {patch.name!s} did not apply correctly.')

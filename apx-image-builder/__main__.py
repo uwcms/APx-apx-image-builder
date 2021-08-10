@@ -2,9 +2,10 @@ import argparse
 import logging
 import os
 import shutil
+import sys
 import textwrap
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, NamedTuple, Set, Tuple, cast
+from typing import Any, Dict, Iterable, List, NamedTuple, NoReturn, Set, Tuple, cast
 
 import yaml
 
@@ -15,46 +16,10 @@ logging.basicConfig(format='%(levelname).1s: %(name)s: %(message)s', level=loggi
 LOGGER = logging.getLogger()
 LOGGER.name = 'apx-image-builder'
 
-BUILDERS: Dict[str, BaseBuilder] = {builder.NAME: builder() for builder in builders.all_builders}
-STAGES: Dict[str, Dict[str, Stage]] = {}
-valid_stages: Set[str] = set()
-
-for builder in BUILDERS.values():
-	builder.instantiate_stages()
-	valid_stages.add('{builder.NAME}:ALL'.format(builder=builder))
-	for stage in builder.STAGES.values():
-		STAGES.setdefault(builder.NAME, {})[stage.name] = stage
-		valid_stages.add('{builder.NAME}:{stage.name}'.format(builder=builder, stage=stage))
-		valid_stages.add('ALL:{stage.name}'.format(stage=stage))
-
-
-def generate_stage_helptext(stagedata: Dict[str, Dict[str, Stage]]) -> str:
-	result = ''
-	for builder_name, builder_stages in stagedata.items():
-		result += '\n'.join([builder_name + ':'] + textwrap.
-		                    wrap(', '.join(builder_stages.keys()), initial_indent='  ', subsequent_indent='  ')) + '\n'
-	return result
-
-
-parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-parser.add_argument(
-    'stages',
-    action='store',
-    nargs='+',
-    default=['ALL:ALL'],
-    choices=sorted(valid_stages),
-    help='''
-Choose which build stages to run.
-A stage is specified by a builder name, a colon, then a stage name.
-For example: 'kernel:build'.
-
-Either the builder or stage name (or both) may be replaced with 'ALL', to
-specify all matching stages.  The default is ALL:ALL
-
-Available builders and their stages are:
-{stages}
-'''.format(stages=generate_stage_helptext(STAGES)).strip()
-)
+# We're going to parse our arguments twice.  Once to get a config, then once
+# after we know (based on the config) the configuration and availability of our
+# builders.
+parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, allow_abbrev=False, add_help=False)
 parser.add_argument(
     '-c',
     '--config',
@@ -63,15 +28,43 @@ parser.add_argument(
     default=Path('config.yaml'),
     help='The configuration file to load (default ./config.yaml)'
 )
+parser.add_argument(
+    '--write-example-config',
+    action='store_true',
+    help='Write the example config to the path specified by --config. (must not exist)'
+)
 parser_logging = parser.add_mutually_exclusive_group()
 parser_logging.add_argument('-v', '--verbose', action='store_true', help='Set loglevel to DEBUG')
 parser_logging.add_argument('-q', '--quiet', action='store_true', help='Set loglevel to WARNING')
+ARGS, _ = parser.parse_known_args()
+if not cast(Path, ARGS.config).exists():
 
-for builder in BUILDERS.values():
-	builder.prepare_argparse(parser.add_argument_group('"{builder.NAME}" builder'.format(builder=builder)))
+	def write_example_config(f: Path) -> NoReturn:
+		if f.exists():
+			print('Unable to write example config: File exists: ' + str(f), file=sys.stderr)
+			raise SystemExit(1)
+		try:
+			import pkg_resources
+			exampleconf = pkg_resources.resource_string(__name__, 'config.example.yaml')
+		except ImportError as e:
+			print(
+			    'No supported package resource access module installed.  (install the `pkg_resources` python module)',
+			    file=sys.stderr
+			)
+			raise SystemExit(1)
+		with open(f, 'wb') as fd:
+			fd.write(exampleconf)
+		print('Example config written to ' + str(f))
+		raise SystemExit(0)
 
-ARGS = parser.parse_args()
+	if ARGS.write_example_config:
+		write_example_config(ARGS.config)
 
+	print('Unable to open config file.', file=sys.stderr)
+	parser.print_help()
+	raise SystemExit(1)
+
+# Parsed.  We have a config path, and verbosity level.
 if ARGS.verbose:
 	logging.getLogger().setLevel(logging.DEBUG)
 if ARGS.quiet:
@@ -117,11 +110,69 @@ except Exception as e:
 	LOGGER.error('Failed to change to working directory {wd}'.format(wd=repr(CONFIG['working_directory'])))
 	raise SystemExit(1)
 
+LOGGER.debug('Initializing builders.')
 BUILD_PATHS = BuildPaths(CONFIG['sources_directory'], CONFIG['build_directory'], CONFIG['output_directory'], None)
-shutil.rmtree(BUILD_PATHS.output_root / 'logs', ignore_errors=True)  # Fresh init the log output directory.
+
+# Now we can instantiate stages and prepare our actual argument parser.
+# This will replace the output of the previous so it must contain all of the previous's options.
+BUILDERS: Dict[str,
+               BaseBuilder] = {builder.NAME: builder(CONFIG, BUILD_PATHS, ARGS)
+                               for builder in builders.all_builders}
+STAGES: Dict[str, Dict[str, Stage]] = {}
+valid_stages: Set[str] = set()
 
 for builder in BUILDERS.values():
-	builder.update_config(CONFIG, ARGS)
+	valid_stages.add('{builder.NAME}:ALL'.format(builder=builder))
+	for stage in builder.STAGES.values():
+		STAGES.setdefault(builder.NAME, {})[stage.name] = stage
+		valid_stages.add('{builder.NAME}:{stage.name}'.format(builder=builder, stage=stage))
+		valid_stages.add('ALL:{stage.name}'.format(stage=stage))
+
+
+def generate_stage_helptext(stagedata: Dict[str, Dict[str, Stage]]) -> str:
+	result = ''
+	for builder_name, builder_stages in stagedata.items():
+		result += '\n'.join([builder_name + ':'] + textwrap.
+		                    wrap(', '.join(builder_stages.keys()), initial_indent='  ', subsequent_indent='  ')) + '\n'
+	return result
+
+
+parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument(
+    '-c',
+    '--config',
+    action='store',
+    type=Path,
+    default=Path('config.yaml'),
+    help='The configuration file to load (default ./config.yaml)'
+)
+
+parser.add_argument(
+    'stages',
+    action='store',
+    nargs='+',
+    default=['ALL:ALL'],
+    choices=sorted(valid_stages),
+    help='''
+Choose which build stages to run.
+A stage is specified by a builder name, a colon, then a stage name.
+For example: 'kernel:build'.
+
+Either the builder or stage name (or both) may be replaced with 'ALL', to
+specify all matching stages.  The default is ALL:ALL
+
+Available builders and their stages are:
+{stages}
+'''.format(stages=generate_stage_helptext(STAGES)).strip()
+)
+parser_logging = parser.add_mutually_exclusive_group()
+parser_logging.add_argument('-v', '--verbose', action='store_true', help='Set loglevel to DEBUG')
+parser_logging.add_argument('-q', '--quiet', action='store_true', help='Set loglevel to WARNING')
+
+for builder in BUILDERS.values():
+	builder.prepare_argparse(parser.add_argument_group('"{builder.NAME}" builder'.format(builder=builder)))
+
+ARGS = parser.parse_args()
 
 
 # Identify the stages that must be run.
@@ -226,7 +277,7 @@ def sequence_stages() -> List[Tuple[str, str]]:
 sequenced_stages = sequence_stages()
 
 LOGGER.debug(f'Stages to be run: {", ".join(":".join(stage) for stage in sequenced_stages)}')
-
+shutil.rmtree(BUILD_PATHS.output_root / 'logs', ignore_errors=True)  # Fresh init the log output directory.
 
 def check_conditions() -> List[str]:
 	# The function is just to create a temporary scope.
@@ -235,7 +286,7 @@ def check_conditions() -> List[str]:
 	conditions_failed_for: List[str] = []
 	for builder_name, stage_name in sequenced_stages:
 		try:
-			if not STAGES[builder_name][stage_name].check(BUILD_PATHS.respecialize(builder_name)):
+			if not STAGES[builder_name][stage_name].check():
 				LOGGER.error('Conditions not met for {builder}:{stage}'.format(builder=builder_name, stage=stage_name))
 				conditions_failed_for.append(builder_name + ':' + stage_name)
 		except StepFailedError:
@@ -253,7 +304,7 @@ if conditions_failed_for:
 for i, (builder_name, stage_name) in enumerate(sequenced_stages):
 	LOGGER.info(f'Running {builder_name}:{stage_name} ({i+1}/{len(sequenced_stages)})')
 	try:
-		STAGES[builder_name][stage_name].run(BUILD_PATHS.respecialize(builder_name))
+		STAGES[builder_name][stage_name].run()
 	except StepFailedError as e:
 		LOGGER.error(f'{builder_name}:{stage_name} failed: {e!s}')
 		raise SystemExit(1)
