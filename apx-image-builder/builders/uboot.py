@@ -102,9 +102,7 @@ Stages available:
 		statefile = base.JSONStateFile(PATHS.build / '.state.json')
 		ubdir = PATHS.build / 'u-boot'
 		patcher = base.Patcher(PATHS.build / 'patches')
-		patches = ['builtin:///uboot_data/01_config_user.patch']
-		patches.extend(self.BUILDER_CONFIG.get('patches', []))
-		if patcher.import_patches(PATHS, LOGGER, self.ARGS, patches):
+		if patcher.import_patches(PATHS, LOGGER, self.ARGS, self.BUILDER_CONFIG.get('patches', [])):
 			with statefile as state:
 				state['tree_ready'] = False
 		if statefile.state.get('tree_ready', False):
@@ -126,17 +124,9 @@ Stages available:
 				with statefile as state:
 					state['user_config_hash'] = user_config_hash
 
-		if base.import_source(PATHS, LOGGER, self.ARGS, 'u-boot.config_user.h', ubdir / 'include/config_user.h'):
-			# Since we artificially created this include with a patch, I'm not
-			# fully confident that Make will appropriately propogate updates to
-			# these files when doing its freshness detection.
-			# Let's touch the files that #include it.
-			base.run(
-			    PATHS, LOGGER, [
-			        'touch', '--no-create', ubdir / 'include/configs/xilinx_zynqmp.h',
-			        ubdir / 'include/configs/zynq-common.h'
-			    ]
-			)
+		# Fallback check required when the tree is regenerated with an unchanged config.
+		if (PATHS.build / '.config').exists() and not (ubdir / '.config').exists():
+			shutil.copyfile(PATHS.build / '.config', ubdir / '.config')
 
 		# Provide our config as an output.
 		shutil.copyfile(ubdir / '.config', PATHS.output / 'u-boot.config')
@@ -220,9 +210,7 @@ Stages available:
 		LOGGER.info('Running `clean`...')
 		try:
 			base.run(
-			    PATHS,
-			    LOGGER, ['make', 'CROSS_COMPILE=' + self.cross_compile, 'clean'],
-			    cwd=PATHS.build / 'u-boot'
+			    PATHS, LOGGER, ['make', 'CROSS_COMPILE=' + self.cross_compile, 'clean'], cwd=PATHS.build / 'u-boot'
 			)
 		except subprocess.CalledProcessError:
 			base.fail(LOGGER, '`clean` returned with an error')

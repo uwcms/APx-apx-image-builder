@@ -101,6 +101,10 @@ Stages available:
 				with statefile as state:
 					state['user_config_hash'] = user_config_hash
 
+		# Fallback check required when the tree is regenerated with an unchanged config.
+		if (PATHS.build / '.config').exists() and not (brdir / '.config').exists():
+			shutil.copyfile(PATHS.build / '.config', brdir / '.config')
+
 		# Provide our config as an output.
 		shutil.copyfile(brdir / '.config', PATHS.output / 'rootfs.config')
 
