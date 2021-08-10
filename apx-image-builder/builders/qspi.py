@@ -123,7 +123,6 @@ Stages available:
 				fd.write(
 				    textwrap.dedent(
 				        '''
-						sf probe;
 						sf read 0x00200000 0x{kernel_address[1]:08x} 0x{kernel_address[2]:08x};
 						sf read 0x04000000 0x{rootfs_address[1]:08x} 0x{rootfs_address[2]:08x};
 						booti 0x00200000 0x04000000 0x{dtb_address:08x}'''
