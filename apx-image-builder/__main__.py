@@ -120,6 +120,9 @@ except Exception as e:
 BUILD_PATHS = BuildPaths(CONFIG['sources_directory'], CONFIG['build_directory'], CONFIG['output_directory'], None)
 shutil.rmtree(BUILD_PATHS.output_root / 'logs', ignore_errors=True)  # Fresh init the log output directory.
 
+for builder in BUILDERS.values():
+	builder.update_config(CONFIG, ARGS)
+
 
 # Identify the stages that must be run.
 def sequence_stages() -> List[Tuple[str, str]]:
@@ -221,9 +224,6 @@ def sequence_stages() -> List[Tuple[str, str]]:
 
 
 sequenced_stages = sequence_stages()
-
-for builder in BUILDERS.values():
-	builder.update_config(CONFIG, ARGS)
 
 LOGGER.debug(f'Stages to be run: {", ".join(":".join(stage) for stage in sequenced_stages)}')
 
