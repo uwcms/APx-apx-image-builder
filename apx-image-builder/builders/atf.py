@@ -119,7 +119,7 @@ class ATFBuilder(base.BaseBuilder):
 		atf = atfdir / 'build/zynqmp/release/bl31/bl31.elf'
 		if not atf.exists():
 			base.fail(STAGE.logger, 'bl31.elf not found after build.')
-		shutil.copyfile(atf, self.PATHS.output / 'bl31.elf')
+		base.copyfile(atf, self.PATHS.output / 'bl31.elf')
 
 	def clean(self, STAGE: base.Stage) -> None:
 		if base.check_bypass(STAGE, extract=False):

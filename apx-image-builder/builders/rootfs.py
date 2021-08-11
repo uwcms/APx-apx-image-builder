@@ -98,16 +98,16 @@ class RootfsBuilder(base.BaseBuilder):
 			# with `make` caching.
 			user_config_hash = base.hash_file('sha256', open(self.PATHS.build / '.config', 'rb'))
 			if statefile.state.get('user_config_hash', '') != user_config_hash:
-				shutil.copyfile(self.PATHS.build / '.config', brdir / '.config')
+				base.copyfile(self.PATHS.build / '.config', brdir / '.config')
 				with statefile as state:
 					state['user_config_hash'] = user_config_hash
 
 		# Fallback check required when the tree is regenerated with an unchanged config.
 		if (self.PATHS.build / '.config').exists() and not (brdir / '.config').exists():
-			shutil.copyfile(self.PATHS.build / '.config', brdir / '.config')
+			base.copyfile(self.PATHS.build / '.config', brdir / '.config')
 
 		# Provide our config as an output.
-		shutil.copyfile(brdir / '.config', self.PATHS.output / 'rootfs.config')
+		base.copyfile(brdir / '.config', self.PATHS.output / 'rootfs.config')
 
 	def nconfig(self, STAGE: base.Stage) -> None:
 		if base.check_bypass(STAGE):
@@ -123,7 +123,7 @@ class RootfsBuilder(base.BaseBuilder):
 		STAGE.logger.info('Finished `nconfig`.')
 
 		# Provide our kernel config as an output.
-		shutil.copyfile(brdir / '.config', self.PATHS.output / 'rootfs.config')
+		base.copyfile(brdir / '.config', self.PATHS.output / 'rootfs.config')
 		STAGE.logger.warning(
 		    'The output file `rootfs.config` has been created.  You must manually copy this to your sources directory.'
 		)
@@ -144,7 +144,7 @@ class RootfsBuilder(base.BaseBuilder):
 			image = self.PATHS.build / 'buildroot/output/images' / image_name
 			if not image.exists():
 				base.fail(STAGE.logger, image_name + ' not found after build.')
-			shutil.copyfile(image, self.PATHS.output / image_name)
+			base.copyfile(image, self.PATHS.output / image_name)
 
 	def clean(self, STAGE: base.Stage) -> None:
 		if base.check_bypass(STAGE, extract=False):

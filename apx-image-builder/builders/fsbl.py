@@ -106,7 +106,7 @@ class FSBLBuilder(base.BaseBuilder):
 		elfs = list(self.PATHS.build.glob('workspace/fsbl/*.elf'))
 		if len(elfs) != 1:
 			base.fail(STAGE.logger, 'Found multiple elf files after build: ' + ' '.join(elf.name for elf in elfs))
-		shutil.copyfile(elfs[0], self.PATHS.output / 'fsbl.elf')
+		base.copyfile(elfs[0], self.PATHS.output / 'fsbl.elf')
 
 	def clean(self, STAGE: base.Stage) -> None:
 		if base.check_bypass(STAGE, extract=False):

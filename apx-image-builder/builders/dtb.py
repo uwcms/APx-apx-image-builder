@@ -104,7 +104,7 @@ class DTBBuilder(base.BaseBuilder):
 			workdir = tempfile.TemporaryDirectory(prefix='xsi_workdir')
 			shutil.rmtree(dtsdir, ignore_errors=True)
 
-			shutil.copyfile(self.PATHS.build / 'system.xsa', Path(workdir.name) / 'system.xsa')
+			base.copyfile(self.PATHS.build / 'system.xsa', Path(workdir.name) / 'system.xsa')
 			xsct_script = textwrap.dedent(
 			    """
 			set hw_design [hsi open_hw_design system.xsa]
@@ -139,7 +139,7 @@ class DTBBuilder(base.BaseBuilder):
 		if not configfile.exists():
 			base.fail(STAGE.logger, 'No source file named "system-user.dtsi".')
 		else:
-			shutil.copyfile(configfile, dtsdir / 'system-user.dtsi')
+			base.copyfile(configfile, dtsdir / 'system-user.dtsi')
 
 	def build(self, STAGE: base.Stage) -> None:
 		if base.check_bypass(STAGE):
@@ -163,9 +163,9 @@ class DTBBuilder(base.BaseBuilder):
 			base.fail(STAGE.logger, '`dtc` returned with an error')
 
 		# Provide composite dts as an output.
-		shutil.copyfile(dtsdir / 'composite.dts', self.PATHS.output / 'system.dts')
+		base.copyfile(dtsdir / 'composite.dts', self.PATHS.output / 'system.dts')
 		# Provide dtb as an output.
-		shutil.copyfile(dtsdir / 'composite.dtb', self.PATHS.output / 'system.dtb')
+		base.copyfile(dtsdir / 'composite.dtb', self.PATHS.output / 'system.dtb')
 
 	def clean(self, STAGE: base.Stage) -> None:
 		if base.check_bypass(STAGE, extract=False):

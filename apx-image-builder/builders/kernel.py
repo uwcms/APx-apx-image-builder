@@ -195,13 +195,13 @@ class KernelBuilder(base.BaseBuilder):
 			# with `make` caching.
 			user_config_hash = base.hash_file('sha256', open(self.PATHS.build / 'user.config', 'rb'))
 			if statefile.state.get('user_config_hash', '') != user_config_hash:
-				shutil.copyfile(self.PATHS.build / 'user.config', self.PATHS.build / 'linux/.config')
+				base.copyfile(self.PATHS.build / 'user.config', self.PATHS.build / 'linux/.config')
 				with statefile as state:
 					state['user_config_hash'] = user_config_hash
 					state['built_config_hash'] = None
 
 		# Provide our kernel config as an output.
-		shutil.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config')
+		base.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config')
 
 	def defconfig(self, STAGE: base.Stage) -> None:
 		if base.check_bypass(STAGE):
@@ -220,7 +220,7 @@ class KernelBuilder(base.BaseBuilder):
 			state['user_config_hash'] = None  # disable any "caching" next run
 
 		# Provide our kernel config as an output.
-		shutil.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config')
+		base.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config')
 		STAGE.logger.warning(
 		    'The output file `kernel.config` has been created.  You must manually copy this to your sources directory.'
 		)
@@ -246,7 +246,7 @@ class KernelBuilder(base.BaseBuilder):
 			state['user_config_hash'] = None  # disable any "caching" next run
 
 		# Provide our kernel config as an output.
-		shutil.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config')
+		base.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config')
 		STAGE.logger.warning(
 		    'The output file `kernel.config` has been created.  You must manually copy this to your sources directory.'
 		)
@@ -274,7 +274,7 @@ class KernelBuilder(base.BaseBuilder):
 			state['user_config_hash'] = None  # disable any "caching" next run
 
 		# Provide our kernel config as an output.
-		shutil.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config')
+		base.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config')
 		STAGE.logger.warning(
 		    'The output file `kernel.config` has been created.  You must manually copy this to your sources directory.'
 		)
@@ -303,7 +303,7 @@ class KernelBuilder(base.BaseBuilder):
 				state['built_config_hash'] = base.hash_file('sha256', open(linuxdir / '.config', 'rb'))
 
 		# Provide our final, used kernel config as an output, separate from the user-defined one.
-		shutil.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config.built')
+		base.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config.built')
 
 	def build(self, STAGE: base.Stage) -> None:
 		if base.check_bypass(STAGE):
@@ -330,15 +330,15 @@ class KernelBuilder(base.BaseBuilder):
 		# Provide Image as an output.
 		# We first have to ungzip it, becuase this is the only output we get
 		# from the linux build, but everything else needs it raw, right now.
-		shutil.copyfile(linuxdir / 'arch/arm64/boot/Image.gz', self.PATHS.build / 'Image.gz')
+		base.copyfile(linuxdir / 'arch/arm64/boot/Image.gz', self.PATHS.build / 'Image.gz')
 		try:
 			base.run(STAGE, ['gunzip', '-f', 'Image.gz'], cwd=self.PATHS.build)
 		except subprocess.CalledProcessError:
 			base.fail(STAGE.logger, '`gunzip` returned with an error')
-		shutil.copyfile(self.PATHS.build / 'Image', self.PATHS.output / 'Image')
+		base.copyfile(self.PATHS.build / 'Image', self.PATHS.output / 'Image')
 
 		STAGE.logger.info('Building kernel RPMs')
-		shutil.copyfile(self.PATHS.build / 'binkernel.spec', linuxdir / 'binkernel.spec')
+		base.copyfile(self.PATHS.build / 'binkernel.spec', linuxdir / 'binkernel.spec')
 
 		STAGE.logger.debug('Identifying kernel release.')
 		kernelrelease = ''  # This will set the str type properly.  fail() below will ensure the value is set properly.
@@ -377,10 +377,10 @@ class KernelBuilder(base.BaseBuilder):
 
 		# Provide our rpms as an output. (for standard installation)
 		for file in self.PATHS.build.glob('rpmbuild/RPMS/*/*.rpm'):
-			shutil.copyfile(file, self.PATHS.output / file.name)
+			base.copyfile(file, self.PATHS.output / file.name)
 
 		# Provide our final, used kernel config as an output, separate from the user-defined one.
-		shutil.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config.built')
+		base.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config.built')
 
 	def clean(self, STAGE: base.Stage) -> None:
 		if base.check_bypass(STAGE, extract=False):

@@ -163,7 +163,7 @@ Stages available:
 			output = self.PATHS.build / outputfn
 			if not output.exists():
 				base.fail(STAGE.logger, outputfn + ' not found after build.')
-			shutil.copyfile(output, self.PATHS.output / file)
+			base.copyfile(output, self.PATHS.output / file)
 
 		# Let's generate a basic convenient "flash.sh" script.
 		STAGE.logger.info('Generating flash.sh helper script.')
@@ -187,7 +187,7 @@ Stages available:
 				        ' '.join('{0}:{1}'.format(*partpair) for partpair in partition_files),
 				    )
 				)
-			shutil.copyfile(self.PATHS.build / 'flash.sh', self.PATHS.output / 'flash.sh')
+			base.copyfile(self.PATHS.build / 'flash.sh', self.PATHS.output / 'flash.sh')
 			(self.PATHS.output / 'flash.sh').chmod(0o755)
 
 

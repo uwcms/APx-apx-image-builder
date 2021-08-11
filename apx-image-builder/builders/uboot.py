@@ -122,16 +122,16 @@ class UBootBuilder(base.BaseBuilder):
 			# with `make` caching.
 			user_config_hash = base.hash_file('sha256', open(self.PATHS.build / '.config', 'rb'))
 			if statefile.state.get('user_config_hash', '') != user_config_hash:
-				shutil.copyfile(self.PATHS.build / '.config', ubdir / '.config')
+				base.copyfile(self.PATHS.build / '.config', ubdir / '.config')
 				with statefile as state:
 					state['user_config_hash'] = user_config_hash
 
 		# Fallback check required when the tree is regenerated with an unchanged config.
 		if (self.PATHS.build / '.config').exists() and not (ubdir / '.config').exists():
-			shutil.copyfile(self.PATHS.build / '.config', ubdir / '.config')
+			base.copyfile(self.PATHS.build / '.config', ubdir / '.config')
 
 		# Provide our config as an output.
-		shutil.copyfile(ubdir / '.config', self.PATHS.output / 'u-boot.config')
+		base.copyfile(ubdir / '.config', self.PATHS.output / 'u-boot.config')
 
 	def defconfig(self, STAGE: base.Stage) -> None:
 		if base.check_bypass(STAGE):
@@ -154,7 +154,7 @@ class UBootBuilder(base.BaseBuilder):
 		STAGE.logger.info('Finished `{defconfig}`.'.format(defconfig=defconfig))
 
 		# Provide our kernel config as an output.
-		shutil.copyfile(ubdir / '.config', self.PATHS.output / 'u-boot.config')
+		base.copyfile(ubdir / '.config', self.PATHS.output / 'u-boot.config')
 		STAGE.logger.warning(
 		    'The output file `u-boot.config` has been created.  You must manually copy this to your sources directory.'
 		)
@@ -182,7 +182,7 @@ class UBootBuilder(base.BaseBuilder):
 		STAGE.logger.info('Finished `nconfig`.')
 
 		# Provide our kernel config as an output.
-		shutil.copyfile(ubdir / '.config', self.PATHS.output / 'u-boot.config')
+		base.copyfile(ubdir / '.config', self.PATHS.output / 'u-boot.config')
 		STAGE.logger.warning(
 		    'The output file `u-boot.config` has been created.  You must manually copy this to your sources directory.'
 		)
@@ -202,7 +202,7 @@ class UBootBuilder(base.BaseBuilder):
 		ub = ubdir / 'u-boot.elf'
 		if not ub.exists():
 			base.fail(STAGE.logger, 'u-boot.elf not found after build.')
-		shutil.copyfile(ub, self.PATHS.output / 'u-boot.elf')
+		base.copyfile(ub, self.PATHS.output / 'u-boot.elf')
 
 	def clean(self, STAGE: base.Stage) -> None:
 		if base.check_bypass(STAGE, extract=False):

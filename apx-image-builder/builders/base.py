@@ -6,12 +6,14 @@ import logging
 import os
 import select
 import shutil
+import stat
 import subprocess
 import tempfile
 import textwrap
 import urllib.parse
 from pathlib import Path, PurePath
-from typing import (IO, Any, Callable, Dict, List, NoReturn, Optional, Sequence, Tuple, Union, cast)
+from typing import (IO, Any, Callable, Dict, List, NoReturn, Optional,
+                    Sequence, Tuple, Union, cast)
 
 
 class StepFailedError(RuntimeError):
@@ -331,6 +333,16 @@ def check_bypass(STAGE: Stage, *, extract: bool = True, bypass_file: Optional[Un
 	return True
 
 
+def copyfile(src: Path, dst: Path, *, follow_symlinks: bool = True, copy_x_bit: bool = True) -> None:
+	shutil.copyfile(src, dst, follow_symlinks=follow_symlinks)
+	if copy_x_bit and (stat.S_IMODE(src.stat().st_mode) & 0o111):
+		# The source file was executable.
+		dstmode = stat.S_IMODE(dst.stat().st_mode)
+		# Take the 'r' mask, and convert it to an 'x' mask, and add it to the modes.
+		dstmode |= ((dstmode & 0o444) >> 2)
+		dst.chmod(dstmode)
+
+
 def import_source(
         STAGE: Stage,
         source_url: Union[str, Path],
@@ -444,7 +456,7 @@ def import_source(
 	else:
 		if not quiet:
 			LOGGER.info(f'Importing source file {comprehensible_source_url!s}')
-		shutil.copyfile(source_url, target, follow_symlinks=True)
+		copyfile(source_url, target, follow_symlinks=True)
 		return True
 
 
