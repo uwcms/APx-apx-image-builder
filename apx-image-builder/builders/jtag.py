@@ -27,20 +27,21 @@ Stages available:
 
 	def instantiate_stages(self) -> None:
 		super().instantiate_stages()
-		requirements: List[str] = [
-		    self.NAME + ':clean', self.NAME + ':distclean', 'fsbl:build', 'dtb:build', 'u-boot:build', 'kernel:build',
-		    'rootfs:build'
-		]
+		requirements: List[str] = ['fsbl:build', 'dtb:build', 'u-boot:build', 'kernel:build', 'rootfs:build']
 
 		if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp':
 			requirements.extend(['pmu:build', 'atf:build'])
 
-		self.STAGES['build'] = base.Stage(self, 'build', self.check, self.build, requires=requirements)
+		self.STAGES['build'] = base.BypassableStage(
+		    self,
+		    'build',
+		    self.check,
+		    self.build,
+		    requires=requirements,
+		    after=[self.NAME + ':clean', self.NAME + ':distclean'] + requirements
+		)
 
 	def check(self, STAGE: base.Stage) -> bool:
-		if base.check_bypass(STAGE, extract=False):
-			return True  # We're bypassed.
-
 		check_ok: bool = True
 		if not shutil.which('bootgen'):
 			STAGE.logger.error(f'Unable to locate `bootgen`.  Did you source the Vivado environment files?')
@@ -59,9 +60,6 @@ Stages available:
 		return check_ok
 
 	def build(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		base.import_source(STAGE, 'jtag.boot.scr', 'boot.scr', optional=True)
 		try:
 			base.import_source(STAGE, 'jtag-boot.tcl', 'jtag-boot.tcl')

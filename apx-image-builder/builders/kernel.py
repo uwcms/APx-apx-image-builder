@@ -58,21 +58,31 @@ class KernelBuilder(base.BaseBuilder):
 
 	def instantiate_stages(self) -> None:
 		super().instantiate_stages()
-		self.STAGES['clean'] = base.Stage(self, 'clean', self.check, self.clean, include_in_all=False)
-		self.STAGES['fetch'] = base.Stage(
-		    self, 'fetch', self.check, self.fetch, after=[self.NAME + ':distclean', self.NAME + ':clean']
+		self.STAGES['clean'] = base.BypassableStage(
+		    self, 'clean', self.check, self.clean, include_in_all=False, extract_bypass=False
 		)
-		self.STAGES['prepare'] = base.Stage(self, 'prepare', self.check, self.prepare, requires=[self.NAME + ':fetch'])
-		self.STAGES['defconfig'] = base.Stage(
+		self.STAGES['fetch'] = base.BypassableStage(
+		    self,
+		    'fetch',
+		    self.check,
+		    self.fetch,
+		    after=[self.NAME + ':distclean', self.NAME + ':clean'],
+		    extract_bypass=False
+		)
+		self.STAGES['prepare'] = base.BypassableStage(
+		    self, 'prepare', self.check, self.prepare, requires=[self.NAME + ':fetch'], extract_bypass=False
+		)
+		self.STAGES['defconfig'] = base.BypassableStage(
 		    self,
 		    'defconfig',
 		    self.check,
 		    self.defconfig,
 		    requires=[self.NAME + ':prepare'],
 		    before=[self.NAME + ':olddefconfig'],
-		    include_in_all=False
+		    include_in_all=False,
+		    extract_bypass=False
 		)
-		self.STAGES['oldconfig'] = base.Stage(
+		self.STAGES['oldconfig'] = base.BypassableStage(
 		    self,
 		    'oldconfig',
 		    self.check,
@@ -80,9 +90,10 @@ class KernelBuilder(base.BaseBuilder):
 		    requires=[self.NAME + ':prepare'],
 		    after=[self.NAME + ':prepare', self.NAME + ':defconfig'],
 		    before=[self.NAME + ':olddefconfig'],
-		    include_in_all=False
+		    include_in_all=False,
+		    extract_bypass=False
 		)
-		self.STAGES['nconfig'] = base.Stage(
+		self.STAGES['nconfig'] = base.BypassableStage(
 		    self,
 		    'nconfig',
 		    self.check,
@@ -90,17 +101,22 @@ class KernelBuilder(base.BaseBuilder):
 		    requires=[self.NAME + ':prepare'],
 		    after=[self.NAME + ':prepare', self.NAME + ':defconfig', self.NAME + ':oldconfig'],
 		    before=[self.NAME + ':olddefconfig'],
-		    include_in_all=False
+		    include_in_all=False,
+		    extract_bypass=False
 		)
-		self.STAGES['olddefconfig'] = base.Stage(
-		    self, 'olddefconfig', self.check, self.olddefconfig, requires=[self.NAME + ':prepare']
+		self.STAGES['olddefconfig'] = base.BypassableStage(
+		    self,
+		    'olddefconfig',
+		    self.check,
+		    self.olddefconfig,
+		    requires=[self.NAME + ':prepare'],
+		    extract_bypass=False
 		)
-		self.STAGES['build'] = base.Stage(self, 'build', self.check, self.build, requires=[self.NAME + ':olddefconfig'])
+		self.STAGES['build'] = base.BypassableStage(
+		    self, 'build', self.check, self.build, requires=[self.NAME + ':olddefconfig']
+		)
 
 	def check(self, STAGE: base.Stage) -> bool:
-		if base.check_bypass(STAGE, extract=False):
-			return True  # We're bypassed.  Our checks don't matter.
-
 		check_ok: bool = True
 		if STAGE.name in (
 		    'fetch',
@@ -142,9 +158,6 @@ class KernelBuilder(base.BaseBuilder):
 		return check_ok
 
 	def fetch(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		statefile = base.JSONStateFile(self.PATHS.build / '.state.json')
 		sourceurl: Optional[str] = self.BUILDER_CONFIG.get('kernel_sourceurl', None)
 		if sourceurl is None:
@@ -157,9 +170,6 @@ class KernelBuilder(base.BaseBuilder):
 				state['tree_ready'] = False
 
 	def prepare(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		statefile = base.JSONStateFile(self.PATHS.build / '.state.json')
 
 		with statefile as state:
@@ -204,9 +214,6 @@ class KernelBuilder(base.BaseBuilder):
 		base.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config')
 
 	def defconfig(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		linuxdir = self.PATHS.build / 'linux'
 		STAGE.logger.info('Running `defconfig`...')
 		try:
@@ -226,9 +233,6 @@ class KernelBuilder(base.BaseBuilder):
 		)
 
 	def oldconfig(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		linuxdir = self.PATHS.build / 'linux'
 
 		if not (linuxdir / '.config').exists():
@@ -252,9 +256,6 @@ class KernelBuilder(base.BaseBuilder):
 		)
 
 	def nconfig(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		linuxdir = self.PATHS.build / 'linux'
 
 		if not (linuxdir / '.config').exists():
@@ -280,9 +281,6 @@ class KernelBuilder(base.BaseBuilder):
 		)
 
 	def olddefconfig(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		statefile = base.JSONStateFile(self.PATHS.build / '.state.json')
 		linuxdir = self.PATHS.build / 'linux'
 
@@ -306,9 +304,6 @@ class KernelBuilder(base.BaseBuilder):
 		base.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config.built')
 
 	def build(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed. (And chose to extract back in `prepare`)
-
 		linuxdir = self.PATHS.build / 'linux'
 
 		for output in itertools.chain.from_iterable(
@@ -383,9 +378,6 @@ class KernelBuilder(base.BaseBuilder):
 		base.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config.built')
 
 	def clean(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE, extract=False):
-			return  # We're bypassed.
-
 		STAGE.logger.info('Running `mrproper`...')
 		try:
 			base.run(STAGE, ['make'] + self.kbuild_args + ['mrproper'], cwd=self.PATHS.build / 'linux')

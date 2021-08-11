@@ -12,8 +12,7 @@ import tempfile
 import textwrap
 import urllib.parse
 from pathlib import Path, PurePath
-from typing import (IO, Any, Callable, Dict, List, NoReturn, Optional,
-                    Sequence, Tuple, Union, cast)
+from typing import (IO, Any, Callable, Dict, List, NoReturn, Optional, Sequence, Tuple, Union, cast)
 
 
 class StepFailedError(RuntimeError):
@@ -303,36 +302,6 @@ class JSONStateFile(object):
 		self.save()
 
 
-def check_bypass(STAGE: Stage, *, extract: bool = True, bypass_file: Optional[Union[str, Path]] = None) -> bool:
-	PATHS = STAGE.builder.PATHS
-	LOGGER = STAGE.logger
-	if bypass_file is None:
-		bypass_file = '{builder_name}.bypass.tbz2'.format(builder_name=STAGE.builder.NAME)
-	bypass_file = PATHS.user_sources / bypass_file
-	if not bypass_file.exists():
-		return False
-	LOGGER.info('The ' + STAGE.builder.NAME + ' builder is bypassed.  Using pre-generated outputs.')
-	bypass_canary = PATHS.output / '.bypassed'
-	if extract:
-		stb = None
-		stt = None
-		try:
-			stb = bypass_file.stat()
-			stt = bypass_canary.stat()
-		except Exception:
-			pass
-		if stb is not None and stt is not None and stb.st_mtime < stt.st_mtime and stb.st_ctime < stt.st_ctime:
-			LOGGER.debug('Pre-generated outputs have already been extracted.')
-			extract = False
-	if extract:
-		LOGGER.info('Extracting pre-generated outputs.')
-		shutil.rmtree(PATHS.output, ignore_errors=True)
-		PATHS.output.mkdir()
-		run(STAGE, ['tar', '-xf', bypass_file, '-C', PATHS.output])
-		bypass_canary.touch()
-	return True
-
-
 def copyfile(src: Path, dst: Path, *, follow_symlinks: bool = True, copy_x_bit: bool = True) -> None:
 	shutil.copyfile(src, dst, follow_symlinks=follow_symlinks)
 	if copy_x_bit and (stat.S_IMODE(src.stat().st_mode) & 0o111):
@@ -458,6 +427,57 @@ def import_source(
 			LOGGER.info(f'Importing source file {comprehensible_source_url!s}')
 		copyfile(source_url, target, follow_symlinks=True)
 		return True
+
+
+class BypassableStage(Stage):
+	extract_bypass: bool
+
+	def __init__(
+	    self,
+	    builder: 'BaseBuilder',
+	    name: str,
+	    check: Optional[Callable[['Stage'], bool]],
+	    run: Callable[['Stage'], None],
+	    *,
+	    requires: List[str] = [],
+	    after: Optional[List[str]] = None,
+	    before: List[str] = [],
+	    include_in_all: bool = True,
+	    extract_bypass: bool = True,
+	):
+		super().__init__(
+		    builder, name, check, run, requires=requires, after=after, before=before, include_in_all=include_in_all
+		)
+		self.extract_bypass = extract_bypass
+
+	def check(self) -> bool:
+		bypass_file = 'bypass.{builder_name}.tbz2'.format(builder_name=self.builder.NAME)
+		bypass_file = self.builder.PATHS.user_sources / bypass_file / bypass_file
+		if bypass_file.exists():
+			self.logger.debug(f'{self.builder.NAME!s}:{self.name!s} is bypassed.  Skipping requirements checks.')
+			return True
+		return super().check()
+
+	def run(self) -> None:
+		bypass_file = 'bypass.{builder_name}.tbz2'.format(builder_name=self.builder.NAME)
+		bypass_file = self.builder.PATHS.user_sources / bypass_file
+		if bypass_file.exists():
+			self.logger.info(f'{self.builder.NAME!s}:{self.name!s} is bypassed.')
+			if not self.extract_bypass:
+				self.logger.debug("Extracting pre-generated output files is not this stage's responsibility.")
+				return
+			bypass_canary = self.builder.PATHS.output / '.bypassed'
+			if import_source(self, bypass_file, self.builder.PATHS.build / '.bypass.tbz2',
+			                 quiet=True) or not bypass_canary.exists():
+				self.logger.debug('Extracting pre-generated output files.')
+				shutil.rmtree(self.builder.PATHS.output, ignore_errors=True)
+				self.builder.PATHS.output.mkdir()
+				run(self, ['tar', '-xf', bypass_file, '-C', self.builder.PATHS.output])
+				bypass_canary.touch()
+			else:
+				self.logger.debug('Pre-generated output files have already been extracted.')
+			return
+		super().run()
 
 
 def untar(

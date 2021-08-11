@@ -35,17 +35,25 @@ class ATFBuilder(base.BaseBuilder):
 		super().instantiate_stages()
 		if self.COMMON_CONFIG.get('zynq_series', '') != 'zynqmp':
 			return
-		self.STAGES['clean'] = base.Stage(self, 'clean', self.check, self.clean, include_in_all=False)
-		self.STAGES['fetch'] = base.Stage(
-		    self, 'fetch', self.check, self.fetch, after=[self.NAME + ':distclean', self.NAME + ':clean']
+		self.STAGES['clean'] = base.BypassableStage(
+		    self, 'clean', self.check, self.clean, include_in_all=False, extract_bypass=False
 		)
-		self.STAGES['prepare'] = base.Stage(self, 'prepare', self.check, self.prepare, requires=[self.NAME + ':fetch'])
-		self.STAGES['build'] = base.Stage(self, 'build', self.check, self.build, requires=[self.NAME + ':prepare'])
+		self.STAGES['fetch'] = base.BypassableStage(
+		    self,
+		    'fetch',
+		    self.check,
+		    self.fetch,
+		    after=[self.NAME + ':distclean', self.NAME + ':clean'],
+		    extract_bypass=False
+		)
+		self.STAGES['prepare'] = base.BypassableStage(
+		    self, 'prepare', self.check, self.prepare, requires=[self.NAME + ':fetch'], extract_bypass=False
+		)
+		self.STAGES['build'] = base.BypassableStage(
+		    self, 'build', self.check, self.build, requires=[self.NAME + ':prepare']
+		)
 
 	def check(self, STAGE: base.Stage) -> bool:
-		if base.check_bypass(STAGE, extract=False):
-			return True  # We're bypassed.
-
 		check_ok: bool = True
 		if self.COMMON_CONFIG.get('zynq_series', '') != 'zynqmp':
 			STAGE.logger.error('Only ZynqMP chips support Arm Trusted Firmware.')
@@ -73,9 +81,6 @@ class ATFBuilder(base.BaseBuilder):
 		return check_ok
 
 	def fetch(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		statefile = base.JSONStateFile(self.PATHS.build / '.state.json')
 		sourceurl: Optional[str] = self.BUILDER_CONFIG.get('atf_sourceurl', None)
 		if sourceurl is None:
@@ -87,9 +92,6 @@ class ATFBuilder(base.BaseBuilder):
 				state['tree_ready'] = False
 
 	def prepare(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		statefile = base.JSONStateFile(self.PATHS.build / '.state.json')
 		atfdir = self.PATHS.build / 'atf'
 		patcher = base.Patcher(self.PATHS.build / 'patches')
@@ -105,9 +107,6 @@ class ATFBuilder(base.BaseBuilder):
 				state['tree_ready'] = True
 
 	def build(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		atfdir = self.PATHS.build / 'atf'
 		STAGE.logger.info('Running `make`...')
 		try:
@@ -122,9 +121,6 @@ class ATFBuilder(base.BaseBuilder):
 		base.copyfile(atf, self.PATHS.output / 'bl31.elf')
 
 	def clean(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE, extract=False):
-			return  # We're bypassed.
-
 		STAGE.logger.info('Running `clean`...')
 		try:
 			base.run(STAGE, ['make', 'clean'], cwd=self.PATHS.build / 'workspace/pmufw')

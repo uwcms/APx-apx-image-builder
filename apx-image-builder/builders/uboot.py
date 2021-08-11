@@ -33,35 +33,45 @@ class UBootBuilder(base.BaseBuilder):
 
 	def instantiate_stages(self) -> None:
 		super().instantiate_stages()
-		self.STAGES['clean'] = base.Stage(self, 'clean', self.check, self.clean, include_in_all=False)
-		self.STAGES['fetch'] = base.Stage(
-		    self, 'fetch', self.check, self.fetch, after=[self.NAME + ':distclean', self.NAME + ':clean']
+		self.STAGES['clean'] = base.BypassableStage(
+		    self, 'clean', self.check, self.clean, include_in_all=False, extract_bypass=False
 		)
-		self.STAGES['prepare'] = base.Stage(self, 'prepare', self.check, self.prepare, requires=[self.NAME + ':fetch'])
-		self.STAGES['defconfig'] = base.Stage(
+		self.STAGES['fetch'] = base.BypassableStage(
+		    self,
+		    'fetch',
+		    self.check,
+		    self.fetch,
+		    after=[self.NAME + ':distclean', self.NAME + ':clean'],
+		    extract_bypass=False
+		)
+		self.STAGES['prepare'] = base.BypassableStage(
+		    self, 'prepare', self.check, self.prepare, requires=[self.NAME + ':fetch'], extract_bypass=False
+		)
+		self.STAGES['defconfig'] = base.BypassableStage(
 		    self,
 		    'defconfig',
 		    self.check,
 		    self.defconfig,
 		    requires=[self.NAME + ':prepare'],
 		    before=[self.NAME + ':build', self.NAME + ':nconfig'],
-		    include_in_all=False
+		    include_in_all=False,
+		    extract_bypass=False
 		)
-		self.STAGES['nconfig'] = base.Stage(
+		self.STAGES['nconfig'] = base.BypassableStage(
 		    self,
 		    'nconfig',
 		    self.check,
 		    self.nconfig,
 		    requires=[self.NAME + ':prepare'],
 		    before=[self.NAME + ':build'],
-		    include_in_all=False
+		    include_in_all=False,
+		    extract_bypass=False
 		)
-		self.STAGES['build'] = base.Stage(self, 'build', self.check, self.build, requires=[self.NAME + ':prepare'])
+		self.STAGES['build'] = base.BypassableStage(
+		    self, 'build', self.check, self.build, requires=[self.NAME + ':prepare']
+		)
 
 	def check(self, STAGE: base.Stage) -> bool:
-		if base.check_bypass(STAGE, extract=False):
-			return True  # We're bypassed.
-
 		check_ok: bool = True
 		if STAGE.name in ('fetch', 'prepare'
 		                  ) and 'uboot_tag' not in self.BUILDER_CONFIG and 'uboot_sourceurl' not in self.BUILDER_CONFIG:
@@ -85,9 +95,6 @@ class UBootBuilder(base.BaseBuilder):
 		return check_ok
 
 	def fetch(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		statefile = base.JSONStateFile(self.PATHS.build / '.state.json')
 		sourceurl: Optional[str] = self.BUILDER_CONFIG.get('uboot_sourceurl', None)
 		if sourceurl is None:
@@ -99,9 +106,6 @@ class UBootBuilder(base.BaseBuilder):
 				state['tree_ready'] = False
 
 	def prepare(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		statefile = base.JSONStateFile(self.PATHS.build / '.state.json')
 		ubdir = self.PATHS.build / 'u-boot'
 		patcher = base.Patcher(self.PATHS.build / 'patches')
@@ -134,9 +138,6 @@ class UBootBuilder(base.BaseBuilder):
 		base.copyfile(ubdir / '.config', self.PATHS.output / 'u-boot.config')
 
 	def defconfig(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		zynq_series = self.COMMON_CONFIG.get('zynq_series', '')
 		if zynq_series == 'zynq':
 			defconfig = 'xilinx_zynq_virt_defconfig'
@@ -160,9 +161,6 @@ class UBootBuilder(base.BaseBuilder):
 		)
 
 	def nconfig(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		ubdir = self.PATHS.build / 'u-boot'
 
 		if not (ubdir / '.config').exists():
@@ -188,9 +186,6 @@ class UBootBuilder(base.BaseBuilder):
 		)
 
 	def build(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		ubdir = self.PATHS.build / 'u-boot'
 		STAGE.logger.info('Running `make`...')
 		try:
@@ -205,9 +200,6 @@ class UBootBuilder(base.BaseBuilder):
 		base.copyfile(ub, self.PATHS.output / 'u-boot.elf')
 
 	def clean(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE, extract=False):
-			return  # We're bypassed.
-
 		STAGE.logger.info('Running `clean`...')
 		try:
 			base.run(STAGE, ['make', 'CROSS_COMPILE=' + self.cross_compile, 'clean'], cwd=self.PATHS.build / 'u-boot')

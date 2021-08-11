@@ -34,16 +34,22 @@ class FSBLBuilder(base.BaseBuilder):
 
 	def instantiate_stages(self) -> None:
 		super().instantiate_stages()
-		self.STAGES['clean'] = base.Stage(self, 'clean', self.check, self.clean, include_in_all=False)
-		self.STAGES['prepare'] = base.Stage(
-		    self, 'prepare', self.check, self.prepare, after=[self.NAME + ':distclean', self.NAME + ':clean']
+		self.STAGES['clean'] = base.BypassableStage(
+		    self, 'clean', self.check, self.clean, include_in_all=False, extract_bypass=False
 		)
-		self.STAGES['build'] = base.Stage(self, 'build', self.check, self.build, requires=[self.NAME + ':prepare'])
+		self.STAGES['prepare'] = base.BypassableStage(
+		    self,
+		    'prepare',
+		    self.check,
+		    self.prepare,
+		    after=[self.NAME + ':distclean', self.NAME + ':clean'],
+		    extract_bypass=False
+		)
+		self.STAGES['build'] = base.BypassableStage(
+		    self, 'build', self.check, self.build, requires=[self.NAME + ':prepare']
+		)
 
 	def check(self, STAGE: base.Stage) -> bool:
-		if base.check_bypass(STAGE, extract=False):
-			return True  # We're bypassed.
-
 		check_ok: bool = True
 		if not shutil.which('vivado'):
 			STAGE.logger.error('Vivado not found. Please source your Vivado settings.sh file.')
@@ -51,9 +57,6 @@ class FSBLBuilder(base.BaseBuilder):
 		return check_ok
 
 	def prepare(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		statefile = base.JSONStateFile(self.PATHS.build / '.state.json')
 		# We'll need the XSA
 		if base.import_source(STAGE, 'system.xsa', self.PATHS.build / 'system.xsa'):
@@ -90,9 +93,6 @@ class FSBLBuilder(base.BaseBuilder):
 				state['project_generated'] = True
 
 	def build(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		STAGE.logger.info('Running `make`...')
 		try:
 			base.run(
@@ -109,9 +109,6 @@ class FSBLBuilder(base.BaseBuilder):
 		base.copyfile(elfs[0], self.PATHS.output / 'fsbl.elf')
 
 	def clean(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE, extract=False):
-			return  # We're bypassed.
-
 		STAGE.logger.info('Running `clean`...')
 		try:
 			base.run(STAGE, ['make', 'clean'], cwd=self.PATHS.build / 'workspace/fsbl')

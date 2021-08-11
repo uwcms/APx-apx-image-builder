@@ -37,17 +37,25 @@ class DTBBuilder(base.BaseBuilder):
 
 	def instantiate_stages(self) -> None:
 		super().instantiate_stages()
-		self.STAGES['clean'] = base.Stage(self, 'clean', self.check, self.clean, include_in_all=False)
-		self.STAGES['fetch'] = base.Stage(
-		    self, 'fetch', self.check, self.fetch, after=[self.NAME + ':distclean', self.NAME + ':clean']
+		self.STAGES['clean'] = base.BypassableStage(
+		    self, 'clean', self.check, self.clean, include_in_all=False, extract_bypass=False
 		)
-		self.STAGES['prepare'] = base.Stage(self, 'prepare', self.check, self.prepare, requires=[self.NAME + ':fetch'])
-		self.STAGES['build'] = base.Stage(self, 'build', self.check, self.build, requires=[self.NAME + ':prepare'])
+		self.STAGES['fetch'] = base.BypassableStage(
+		    self,
+		    'fetch',
+		    self.check,
+		    self.fetch,
+		    after=[self.NAME + ':distclean', self.NAME + ':clean'],
+		    extract_bypass=False
+		)
+		self.STAGES['prepare'] = base.BypassableStage(
+		    self, 'prepare', self.check, self.prepare, requires=[self.NAME + ':fetch'], extract_bypass=False
+		)
+		self.STAGES['build'] = base.BypassableStage(
+		    self, 'build', self.check, self.build, requires=[self.NAME + ':prepare']
+		)
 
 	def check(self, STAGE: base.Stage) -> bool:
-		if base.check_bypass(STAGE, extract=False):
-			return True  # We're bypassed.
-
 		check_ok: bool = True
 		if STAGE.name in (
 		    'fetch', 'prepare') and 'dtg_tag' not in self.BUILDER_CONFIG and 'dtg_sourceurl' not in self.BUILDER_CONFIG:
@@ -61,9 +69,6 @@ class DTBBuilder(base.BaseBuilder):
 		return check_ok
 
 	def fetch(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		statefile = base.JSONStateFile(self.PATHS.build / '.state.json')
 		sourceurl: Optional[str] = self.BUILDER_CONFIG.get('dtg_sourceurl', None)
 		if sourceurl is None:
@@ -75,9 +80,6 @@ class DTBBuilder(base.BaseBuilder):
 				state['tree_ready'] = False
 
 	def prepare(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		statefile = base.JSONStateFile(self.PATHS.build / '.state.json')
 
 		# We'll need the XSA
@@ -142,9 +144,6 @@ class DTBBuilder(base.BaseBuilder):
 			base.copyfile(configfile, dtsdir / 'system-user.dtsi')
 
 	def build(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE):
-			return  # We're bypassed.
-
 		dtsdir = self.PATHS.build / 'dts'
 		STAGE.logger.info('Running `cpp` to generate the composite dts')
 		try:
@@ -168,9 +167,6 @@ class DTBBuilder(base.BaseBuilder):
 		base.copyfile(dtsdir / 'composite.dtb', self.PATHS.output / 'system.dtb')
 
 	def clean(self, STAGE: base.Stage) -> None:
-		if base.check_bypass(STAGE, extract=False):
-			return  # We're bypassed.
-
 		STAGE.logger.info('Deleting device-tree source files.')
 		shutil.rmtree(self.PATHS.build / 'dts', ignore_errors=True)
 		STAGE.logger.info('Deleting outputs.')
