@@ -15,7 +15,6 @@ from . import base
 
 class QSPIBuilder(base.BaseBuilder):
 	NAME: str = 'qspi'
-	makeflags: List[str]
 
 	@classmethod
 	def prepare_argparse(cls, group: argparse._ArgumentGroup) -> None:
