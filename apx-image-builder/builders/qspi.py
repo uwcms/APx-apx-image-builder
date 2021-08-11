@@ -88,7 +88,7 @@ Stages available:
 		    'atf:bl31.elf',
 		    'dtb:system.dtb',
 		    'u-boot:u-boot.elf',
-		    'kernel:Image.gz',
+		    'kernel:Image',
 		    'rootfs:rootfs.cpio.uboot',
 		]
 		for builder, source in (x.split(':', 1) for x in built_sources):
@@ -146,12 +146,6 @@ Stages available:
 			)
 		except subprocess.CalledProcessError:
 			base.fail(STAGE.logger, '`bootgen` returned with an error')
-
-		STAGE.logger.info('Extracting kernel image')
-		try:
-			base.run(STAGE, ['gzip', '-d', '-f', 'Image.gz'])
-		except subprocess.CalledProcessError:
-			base.fail(STAGE.logger, '`gzip` returned with an error')
 
 		STAGE.logger.info('Generating boot.scr FIT image')
 		try:

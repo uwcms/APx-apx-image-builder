@@ -327,10 +327,15 @@ class KernelBuilder(base.BaseBuilder):
 		except subprocess.CalledProcessError:
 			base.fail(STAGE.logger, 'Kernel `make` returned with an error')
 
-		# Provide vmlinux ELF as an output. (for JTAG boots)
-		shutil.copyfile(linuxdir / 'vmlinux', self.PATHS.output / 'vmlinux')
-		# Provide the Image.gz as an output. (for QSPI boots?)
-		shutil.copyfile(linuxdir / 'arch/arm64/boot/Image.gz', self.PATHS.output / 'Image.gz')
+		# Provide Image as an output.
+		# We first have to ungzip it, becuase this is the only output we get
+		# from the linux build, but everything else needs it raw, right now.
+		shutil.copyfile(linuxdir / 'arch/arm64/boot/Image.gz', self.PATHS.build / 'Image.gz')
+		try:
+			base.run(STAGE, ['gunzip', '-f', 'Image.gz'], cwd=self.PATHS.build)
+		except subprocess.CalledProcessError:
+			base.fail(STAGE.logger, '`gunzip` returned with an error')
+		shutil.copyfile(self.PATHS.build / 'Image', self.PATHS.output / 'Image')
 
 		STAGE.logger.info('Building kernel RPMs')
 		shutil.copyfile(self.PATHS.build / 'binkernel.spec', linuxdir / 'binkernel.spec')
