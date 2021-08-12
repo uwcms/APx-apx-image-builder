@@ -452,7 +452,7 @@ class BypassableStage(Stage):
 
 	def check(self) -> bool:
 		bypass_file = 'bypass.{builder_name}.tbz2'.format(builder_name=self.builder.NAME)
-		bypass_file = self.builder.PATHS.user_sources / bypass_file / bypass_file
+		bypass_file = self.builder.PATHS.user_sources / bypass_file
 		if bypass_file.exists():
 			self.logger.debug(f'{self.builder.NAME!s}:{self.name!s} is bypassed.  Skipping requirements checks.')
 			return True
