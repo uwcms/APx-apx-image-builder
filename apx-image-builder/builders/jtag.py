@@ -1,14 +1,8 @@
 import argparse
-import hashlib
-import logging
-import os
-import re
 import shutil
 import subprocess
 import textwrap
-import urllib.parse
-from pathlib import Path
-from typing import Any, IO, Dict, List, Optional, Tuple
+from typing import List
 
 from . import base
 
@@ -18,12 +12,14 @@ class JTAGBuilder(base.BaseBuilder):
 
 	@classmethod
 	def prepare_argparse(cls, group: argparse._ArgumentGroup) -> None:
-		group.description = '''
-Build a JTAG boot image.
+		group.description = textwrap.dedent(
+		    '''
+			Build a JTAG boot image.
 
-Stages available:
-  build: Build the JTAG boot image.
-'''.strip()
+			Stages available:
+			build: Build the JTAG boot image.
+			'''
+		).strip()
 
 	def instantiate_stages(self) -> None:
 		super().instantiate_stages()

@@ -1,8 +1,6 @@
 import argparse
-import logging
 import shutil
 import subprocess
-from pathlib import Path
 import textwrap
 from typing import List, Optional
 

@@ -562,7 +562,7 @@ class Patcher(object):
 		target_dir = STAGE.builder.PATHS.build / target_dir
 		for i, patch in enumerate(self.patchset):
 			STAGE.logger.log(LOGLEVEL, f'Applying patch ({i+1}/{len(self.patchset)}) {patch.name!s}')
-			exit, output = run(STAGE, ['patch', '-tNp1', '-d', target_dir, '-i', patch.resolve()], CHECK_RAISE=False)
+			exit, _output = run(STAGE, ['patch', '-tNp1', '-d', target_dir, '-i', patch.resolve()], CHECK_RAISE=False)
 			if exit == 2:
 				fail(STAGE.logger, '`patch` failed to execute correctly.')
 			elif exit == 1:

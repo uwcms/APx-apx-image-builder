@@ -1,12 +1,7 @@
 import argparse
-import hashlib
-import logging
-import os
 import shutil
 import subprocess
 import textwrap
-import urllib.parse
-from pathlib import Path
 from typing import List, Optional
 
 from . import base
