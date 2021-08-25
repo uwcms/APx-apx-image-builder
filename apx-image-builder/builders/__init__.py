@@ -6,6 +6,7 @@ from .dtb import DTBBuilder
 from .uboot import UBootBuilder
 from .kernel import KernelBuilder
 from .rootfs import RootfsBuilder
+from .rpm import RPMBuilder
 from .jtag import JTAGBuilder
 from .qspi import QSPIBuilder
 
@@ -20,6 +21,7 @@ all_builders = [
     UBootBuilder,
     KernelBuilder,
 	RootfsBuilder,
+	RPMBuilder,
 	JTAGBuilder,
 	QSPIBuilder,
 ]

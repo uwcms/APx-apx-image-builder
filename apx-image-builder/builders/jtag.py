@@ -39,9 +39,6 @@ class JTAGBuilder(base.BaseBuilder):
 
 	def check(self, STAGE: base.Stage) -> bool:
 		check_ok: bool = True
-		if not shutil.which('bootgen'):
-			STAGE.logger.error(f'Unable to locate `bootgen`.  Did you source the Vivado environment files?')
-			check_ok = False
 		if not shutil.which('mkimage'):
 			STAGE.logger.error(
 			    f'Unable to locate `mkimage`.  Is uboot-tools (CentOS) or u-boot-tools (ubuntu) installed?'
@@ -49,9 +46,6 @@ class JTAGBuilder(base.BaseBuilder):
 			check_ok = False
 		if not shutil.which('unzip'):
 			STAGE.logger.error(f'Unable to locate `unzip`.')
-			check_ok = False
-		if not shutil.which('gzip'):
-			STAGE.logger.error(f'Unable to locate `gzip`.')
 			check_ok = False
 		return check_ok
 
@@ -63,7 +57,7 @@ class JTAGBuilder(base.BaseBuilder):
 			STAGE.logger.error('jtag-boot.tcl must be provided by the user for licensing reasons.')
 			raise
 
-		dtb_address = self.BUILDER_CONFIG.get('dtb_address', 0x00100000)
+		dtb_address = self.COMMON_CONFIG.get('dtb_address', 0x00100000)
 
 		STAGE.logger.info('Importing prior build products...')
 		built_sources = [
