@@ -26,8 +26,8 @@ class FSBLBuilder(base.BaseBuilder):
 			Build the FSBL
 
 			Stages available:
-			prepare: Generate sources from Vivado and import the hardware project.
-			build: Build the FSBL
+			- prepare: Generate sources from Vivado and import the hardware project.
+			- build: Build the FSBL
 			'''
 		).strip()
 

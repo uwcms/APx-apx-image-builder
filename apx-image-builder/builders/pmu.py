@@ -29,8 +29,8 @@ class PMUBuilder(base.BaseBuilder):
 			Build the PMU firmware (for ZynqMP only)
 
 			Stages available:
-			prepare: Generate sources from Vivado and import the hardware project.
-			build: Build the PMU firmware
+			- prepare: Generate sources from Vivado and import the hardware project.
+			- build: Build the PMU firmware
 			'''
 		).strip()
 

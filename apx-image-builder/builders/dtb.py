@@ -25,9 +25,9 @@ class DTBBuilder(base.BaseBuilder):
 			Build the Device Tree
 
 			Stages available:
-			fetch: Download or copy device-tree generator sources
-			prepare: Extract DTG sources, generate automatic dts files, copy user dts files.
-			build: Build the device tree
+			- fetch: Download or copy device-tree generator sources
+			- prepare: Extract DTG sources, generate automatic dts files, copy user dts files.
+			- build: Build the device tree
 			'''
 		).strip()
 

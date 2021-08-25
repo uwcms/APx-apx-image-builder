@@ -20,9 +20,9 @@ class ATFBuilder(base.BaseBuilder):
 			Build the Arm Trusted Firmware (for ZynqMP only)
 
 			Stages available:
-			fetch: Download or copy sources.
-			prepare: Extract sources.
-			build: Build the Arm Trusted Firmware
+			- fetch: Download or copy sources.
+			- prepare: Extract sources.
+			- build: Build the Arm Trusted Firmware
 			'''
 		).strip()
 

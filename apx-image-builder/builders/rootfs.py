@@ -18,10 +18,10 @@ class RootfsBuilder(base.BaseBuilder):
 			Build rootfs using buildroot.
 
 			Stages available:
-			fetch: Download or copy buildroot sources.
-			prepare: Extract sources.
-			(nconfig): Run `make nconfig`
-			build: Build the rootfs
+			- fetch: Download or copy buildroot sources.
+			- prepare: Extract sources.
+			- (nconfig): Run `make nconfig`
+			- build: Build the rootfs
 			'''
 		).strip()
 

@@ -17,7 +17,7 @@ class JTAGBuilder(base.BaseBuilder):
 			Build a JTAG boot image.
 
 			Stages available:
-			build: Build the JTAG boot image.
+			- build: Build the JTAG boot image.
 			'''
 		).strip()
 

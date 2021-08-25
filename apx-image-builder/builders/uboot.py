@@ -19,13 +19,13 @@ class UBootBuilder(base.BaseBuilder):
 			Build U-Boot
 
 			Stages available:
-			fetch: Download or copy sources.
-			prepare: Extract sources.
-			(defconfig): Run `make xilinx_zynq_virt_defconfig` or
-						Run `make xilinx_zynqmp_virt_defconfig`
-						as appropriate to your zynq_series configuration.
-			(nconfig): Run `make nconfig`
-			build: Build U-Boot
+			- fetch: Download or copy sources.
+			- prepare: Extract sources.
+			- (defconfig): Run `make xilinx_zynq_virt_defconfig` or
+			               Run `make xilinx_zynqmp_virt_defconfig`
+			               as appropriate to your zynq_series configuration.
+			- (nconfig): Run `make nconfig`
+			- build: Build U-Boot
 			'''
 		).strip()
 

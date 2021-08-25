@@ -31,14 +31,14 @@ class KernelBuilder(base.BaseBuilder):
 			Build the linux kernel image.
 
 			Stages available:
-			fetch: Download or copy sources.
-			prepare: Extract sources and import user config
-			(defconfig): Run `make defconfig`
-			(oldconfig): Run `make oldconfig`
-			(nconfig): Run `make nconfig`
-			olddefconfig: Run `make olddefconfig`
-							(required by `build` to ensure config consistency)
-			build: Build the kernel
+			- fetch: Download or copy sources.
+			- prepare: Extract sources and import user config
+			- (defconfig): Run `make defconfig`
+			- (oldconfig): Run `make oldconfig`
+			- (nconfig): Run `make nconfig`
+			- olddefconfig: Run `make olddefconfig`
+			                (required by `build` to ensure config consistency)
+			- build: Build the kernel
 
 			The user-defined configuration will be output as kernel.config.user during the
 			`prepare` step, as well as any of def/old/nconfig.  You must manually move

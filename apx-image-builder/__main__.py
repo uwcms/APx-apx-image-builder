@@ -130,10 +130,16 @@ for builder in BUILDERS.values():
 
 
 def generate_stage_helptext(stagedata: Dict[str, Dict[str, Stage]]) -> str:
-	result = ''
+	result: str = ''
 	for builder_name, builder_stages in stagedata.items():
-		result += '\n'.join([builder_name + ':'] + textwrap.
-		                    wrap(', '.join(builder_stages.keys()), initial_indent='  ', subsequent_indent='  ')) + '\n'
+		stages = []
+		for stage_name, stage in builder_stages.items():
+			if stage_name not in ('distclean', 'clean', 'bypass'):
+				stages.append(stage_name if stage.include_in_all else f'({stage_name})')
+		if not stages:
+			stages = ['[unavailable in this configuration]']
+		result += '\n'.join([builder_name + ':'] +
+		                    textwrap.wrap(', '.join(stages), initial_indent='  ', subsequent_indent='  ')) + '\n'
 	return result
 
 
@@ -152,14 +158,22 @@ parser.add_argument(
     action='store',
     nargs='+',
     default=['ALL:ALL'],
-    choices=sorted(valid_stages),
+    # It turns out that this is terribly spammy in the helptext.
+    # We'll check it manually.
+    #choices=sorted(valid_stages),
     help='''
 Choose which build stages to run.
 A stage is specified by a builder name, a colon, then a stage name.
 For example: 'kernel:build'.
 
 Either the builder or stage name (or both) may be replaced with 'ALL', to
-specify all matching stages.  The default is ALL:ALL
+specify all matching stages.  The default is ALL:ALL.  Some stages are not
+included in xxx:ALL.  Those stages are listed in parentheses.
+
+All builders offer the stages (distclean) and (clean).
+All builders that are not bypassed offer the stage (bypass), which will
+generate and install a bypass file for that builder.
+For more information on stages, see the builder-specific help below.
 
 Available builders and their stages are:
 {stages}
@@ -173,6 +187,12 @@ for builder in BUILDERS.values():
 	builder.prepare_argparse(parser.add_argument_group('"{builder.NAME}" builder'.format(builder=builder)))
 
 ARGS = parser.parse_args()
+
+invalid_stages = [stage for stage in ARGS.stages if stage not in valid_stages]
+if invalid_stages:
+	print('The following stages are unknown (see help): ' + ', '.join(invalid_stages), file=sys.stderr)
+	parser.print_usage(sys.stderr)
+	raise SystemExit(1)
 
 
 # Identify the stages that must be run.
@@ -278,6 +298,7 @@ sequenced_stages = sequence_stages()
 
 LOGGER.debug(f'Stages to be run: {", ".join(":".join(stage) for stage in sequenced_stages)}')
 shutil.rmtree(BUILD_PATHS.output_root / 'logs', ignore_errors=True)  # Fresh init the log output directory.
+
 
 def check_conditions() -> List[str]:
 	# The function is just to create a temporary scope.

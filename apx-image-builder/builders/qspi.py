@@ -13,12 +13,13 @@ class QSPIBuilder(base.BaseBuilder):
 
 	@classmethod
 	def prepare_argparse(cls, group: argparse._ArgumentGroup) -> None:
-		group.description = '''
-Build a QSPI boot image.
-
-Stages available:
-  build: Build the QSPI boot image.
-'''.strip()
+		group.description = textwrap.dedent(
+		    '''
+			Build a QSPI boot image
+			Stages available:
+			- build: Build the QSPI boot image.
+			'''
+		).strip()
 
 	def instantiate_stages(self) -> None:
 		super().instantiate_stages()
