@@ -20,6 +20,6 @@ all_builders = [
     UBootBuilder,
     KernelBuilder,
 	RootfsBuilder,
-	QSPIBuilder,
 	JTAGBuilder,
+	QSPIBuilder,
 ]

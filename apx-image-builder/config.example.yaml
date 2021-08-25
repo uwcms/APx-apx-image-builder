@@ -67,6 +67,7 @@ builders:
     # These files should be in the sources directory.
     # They will be applied with `patch -tNp1`
     #patches: []
+
   atf:
     # The url to fetch the ATF source tarball.
     # file://... is valid.
@@ -84,6 +85,7 @@ builders:
     # These files should be in the sources directory.
     # They will be applied with `patch -tNp1`
     #patches: []
+
   dtb:
     # The url to fetch the device-tree generator source tarball.
     # file://... is valid.
@@ -102,6 +104,7 @@ builders:
     # These files should be in the sources directory.
     # They will be applied with `patch -tNp1`
     #patches: []
+
   'u-boot':
     # The url to fetch the U-Boot source tarball.
     # file://... is valid.
@@ -119,6 +122,7 @@ builders:
     # These files should be in the sources directory.
     # They will be applied with `patch -tNp1`
     #patches: []
+
   kernel:
     # The url to fetch the kernel source tarball.
     # file://... is valid.
@@ -143,6 +147,7 @@ builders:
     # These files should be in the sources directory.
     # They will be applied with `patch -tNp1`
     #patches: []
+
   rootfs:
     # The url to fetch the buildroot source tarball.
     # file://... is valid.
@@ -156,3 +161,13 @@ builders:
     # These files should be in the sources directory.
     # They will be applied with `patch -tNp1`
     #patches: []
+
+  jtag:
+    # The address to load the dtb into in memory.
+    # You should normally keep the default.
+    #dtb_address: 0x00100000
+
+  qspi:
+    # The address to load the dtb into in memory.
+    # You should normally keep the default.
+    #dtb_address: 0x00100000
