@@ -118,22 +118,28 @@ class UBootBuilder(base.BaseBuilder):
 			with statefile as state:
 				state['tree_ready'] = True
 
-		if base.import_source(STAGE, 'u-boot.config', self.PATHS.build / '.config', ignore_timestamps=True):
+		if base.import_source(STAGE, 'u-boot.config', self.PATHS.build / '.config', optional=True,
+		                      ignore_timestamps=True):
 			# We need to use a two stage load here because we actually do update
 			# the imported source, and don't want needless imports to interfere
 			# with `make` caching.
-			user_config_hash = base.hash_file('sha256', open(self.PATHS.build / '.config', 'rb'))
-			if statefile.state.get('user_config_hash', '') != user_config_hash:
-				base.copyfile(self.PATHS.build / '.config', ubdir / '.config')
-				with statefile as state:
-					state['user_config_hash'] = user_config_hash
+			# .config might not exist, if we're running defconfig.
+			if (self.PATHS.build / '.config').exists():
+				user_config_hash = base.hash_file('sha256', open(self.PATHS.build / '.config', 'rb'))
+				if statefile.state.get('user_config_hash', '') != user_config_hash:
+					base.copyfile(self.PATHS.build / '.config', ubdir / '.config')
+					with statefile as state:
+						state['user_config_hash'] = user_config_hash
+			else:
+				(ubdir / '.config').unlink(missing_ok=True)
 
 		# Fallback check required when the tree is regenerated with an unchanged config.
 		if (self.PATHS.build / '.config').exists() and not (ubdir / '.config').exists():
 			base.copyfile(self.PATHS.build / '.config', ubdir / '.config')
 
 		# Provide our config as an output.
-		base.copyfile(ubdir / '.config', self.PATHS.output / 'u-boot.config')
+		if (ubdir / '.config').exists():
+			base.copyfile(ubdir / '.config', self.PATHS.output / 'u-boot.config')
 
 	def defconfig(self, STAGE: base.Stage) -> None:
 		zynq_series = self.COMMON_CONFIG.get('zynq_series', '')
@@ -185,6 +191,9 @@ class UBootBuilder(base.BaseBuilder):
 
 	def build(self, STAGE: base.Stage) -> None:
 		ubdir = self.PATHS.build / 'u-boot'
+		if not (ubdir / '.config').exists():
+			base.fail(STAGE.logger, 'No U-Boot configuration file was found.  Use u-boot:defconfig to generate one.')
+
 		STAGE.logger.info('Running `make`...')
 		try:
 			base.run(STAGE, ['make', 'CROSS_COMPILE=' + self.cross_compile], cwd=ubdir)

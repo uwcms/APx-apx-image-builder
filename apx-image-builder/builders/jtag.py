@@ -63,16 +63,21 @@ class JTAGBuilder(base.BaseBuilder):
 			STAGE.logger.error('jtag-boot.tcl must be provided by the user for licensing reasons.')
 			raise
 
+		dtb_address = self.BUILDER_CONFIG.get('dtb_address', 0x00100000)
+
 		STAGE.logger.info('Importing prior build products...')
 		built_sources = [
 		    'fsbl:fsbl.elf',
-		    'pmu:pmufw.elf',
-		    'atf:bl31.elf',
 		    'dtb:system.dtb',
 		    'u-boot:u-boot.elf',
-		    'kernel:Image',
 		    'rootfs:rootfs.cpio.uboot',
 		]
+		if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp':
+			built_sources.extend(['kernel:Image', 'pmu:pmufw.elf', 'atf:bl31.elf'])
+			ps_init = 'psu_init.tcl'
+		else:
+			built_sources.extend(['kernel:zImage'])
+			ps_init = 'ps7_init.tcl'
 		for builder, source in (x.split(':', 1) for x in built_sources):
 			base.import_source(STAGE, self.PATHS.respecialize(builder).output / source, source, quiet=True)
 
@@ -80,7 +85,12 @@ class JTAGBuilder(base.BaseBuilder):
 		if not bootscr.exists():
 			STAGE.logger.info('Generating boot.scr automatically.')
 			with open(bootscr, 'w') as fd:
-				fd.write('booti 0x00200000 0x04000000 0x00100000')
+				bootcmd = 'booti' if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp' else 'bootz'
+				fd.write(
+				    '{bootcmd} ${{kernel_addr_r}} ${{ramdisk_addr_r}} 0x{dtb_address:08x}'.format(
+				        bootcmd=bootcmd, dtb_address=dtb_address
+				    )
+				)
 
 		base.import_source(STAGE, 'system.xsa', 'system.xsa')
 		xsadir = self.PATHS.build / 'xsa'
@@ -95,7 +105,7 @@ class JTAGBuilder(base.BaseBuilder):
 		if len(bitfiles) != 1:
 			base.fail(STAGE.logger, f'Expected exactly one bitfile in the XSA.  Found {bitfiles!r}')
 		shutil.move(str(bitfiles[0].resolve()), self.PATHS.build / 'system.bit')
-		shutil.move(str(xsadir / 'psu_init.tcl'), self.PATHS.build / 'psu_init.tcl')
+		shutil.move(str(xsadir / ps_init), self.PATHS.build / ps_init)
 
 		STAGE.logger.info('Generating boot.scr FIT image')
 		try:
@@ -106,17 +116,17 @@ class JTAGBuilder(base.BaseBuilder):
 		# Provide our outputs
 		outputs = [
 		    'system.bit',
-		    'psu_init.tcl',
+		    ps_init,
 		    'fsbl.elf',
-		    'pmufw.elf',
-		    'bl31.elf',
 		    'system.dtb',
 		    'u-boot.elf',
-		    'Image',
+		    'Image' if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp' else 'zImage',
 		    'rootfs.cpio.uboot',
 		    'boot.scr.ub',
 		    'jtag-boot.tcl',
 		]
+		if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp':
+			outputs.extend(['pmufw.elf', 'bl31.elf'])
 		for file in outputs:
 			output = self.PATHS.build / file
 			if not output.exists():

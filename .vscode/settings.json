@@ -3,9 +3,11 @@
 	"editor.tabSize": 4,
 	"editor.insertSpaces": false,
 	"files.exclude": {
-		"**/test": true
+		"**/test": true,
+		"**/test-*": true
 	},
 	"files.watcherExclude": {
+		"**/test-*/**": true,
 		"**/test/**": true
 	},
 }

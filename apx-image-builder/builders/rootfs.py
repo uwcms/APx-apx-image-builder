@@ -93,25 +93,31 @@ class RootfsBuilder(base.BaseBuilder):
 			with statefile as state:
 				state['tree_ready'] = True
 
-		if base.import_source(STAGE, 'rootfs.config', self.PATHS.build / '.config', ignore_timestamps=True):
+		if base.import_source(STAGE, 'rootfs.config', self.PATHS.build / '.config', optional=True,
+		                      ignore_timestamps=True):
 			# We need to use a two stage load here because we actually do update
 			# the imported source, and don't want needless imports to interfere
 			# with `make` caching.
-			user_config_hash = base.hash_file('sha256', open(self.PATHS.build / '.config', 'rb'))
-			if statefile.state.get('user_config_hash', '') != user_config_hash:
-				base.copyfile(self.PATHS.build / '.config', brdir / '.config')
-				with statefile as state:
-					state['user_config_hash'] = user_config_hash
+			# .config might not exist, if we're running defconfig.
+			if (self.PATHS.build / '.config').exists():
+				user_config_hash = base.hash_file('sha256', open(self.PATHS.build / '.config', 'rb'))
+				if statefile.state.get('user_config_hash', '') != user_config_hash:
+					base.copyfile(self.PATHS.build / '.config', brdir / '.config')
+					with statefile as state:
+						state['user_config_hash'] = user_config_hash
+			else:
+				(brdir / '.config').unlink(missing_ok=True)
 
 		# Fallback check required when the tree is regenerated with an unchanged config.
 		if (self.PATHS.build / '.config').exists() and not (brdir / '.config').exists():
 			base.copyfile(self.PATHS.build / '.config', brdir / '.config')
 
 		# Provide our config as an output.
-		base.copyfile(brdir / '.config', self.PATHS.output / 'rootfs.config')
+		if (brdir / '.config').exists():
+			base.copyfile(brdir / '.config', self.PATHS.output / 'rootfs.config')
 
 	def nconfig(self, STAGE: base.Stage) -> None:
-		brdir = self.PATHS.build / 'rootfs'
+		brdir = self.PATHS.build / 'buildroot'
 
 		STAGE.logger.info('Running `nconfig`...')
 		try:
@@ -128,6 +134,10 @@ class RootfsBuilder(base.BaseBuilder):
 
 	def build(self, STAGE: base.Stage) -> None:
 		brdir = self.PATHS.build / 'buildroot'
+
+		if not (brdir / '.config').exists():
+			base.fail(STAGE.logger, 'No buildroot configuration file was found.  Use rootfs:nconfig to generate one.')
+
 		STAGE.logger.info('Running `make`...')
 		try:
 			base.run(STAGE, ['make'], cwd=brdir)

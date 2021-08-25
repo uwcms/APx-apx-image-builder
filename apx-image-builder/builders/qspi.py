@@ -56,19 +56,32 @@ Stages available:
 
 	def build(self, STAGE: base.Stage) -> None:
 		dtb_address = self.BUILDER_CONFIG.get('dtb_address', 0x00100000)
-		bif = textwrap.dedent(
-		    '''
-		the_ROM_image:
-		{{
-			[bootloader, destination_cpu=a53-0] fsbl.elf
-			[pmufw_image] pmufw.elf
-			[destination_device=pl] system.bit
-			[destination_cpu=a53-0, exception_level=el-3, trustzone] bl31.elf
-			[destination_cpu=a53-0, load=0x{dtb_address:08x}] system.dtb
-			[destination_cpu=a53-0, exception_level=el-2] u-boot.elf
-		}}
-		'''
-		).format(dtb_address=dtb_address)
+		if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp':
+			bif = textwrap.dedent(
+			    '''
+			the_ROM_image:
+			{{
+				[bootloader, destination_cpu=a53-0] fsbl.elf
+				[pmufw_image] pmufw.elf
+				[destination_device=pl] system.bit
+				[destination_cpu=a53-0, exception_level=el-3, trustzone] bl31.elf
+				[destination_cpu=a53-0, load=0x{dtb_address:08x}] system.dtb
+				[destination_cpu=a53-0, exception_level=el-2] u-boot.elf
+			}}
+			'''
+			).format(dtb_address=dtb_address)
+		else:
+			bif = textwrap.dedent(
+			    '''
+			the_ROM_image:
+			{{
+				[bootloader] fsbl.elf
+				system.bit
+				u-boot.elf
+				[load=0x{dtb_address:08x}] system.dtb
+			}}
+			'''
+			).format(dtb_address=dtb_address)
 		with open(self.PATHS.build / 'boot.bif', 'w') as fd:
 			fd.write(bif)
 
@@ -76,13 +89,14 @@ Stages available:
 		STAGE.logger.info('Importing prior build products...')
 		built_sources = [
 		    'fsbl:fsbl.elf',
-		    'pmu:pmufw.elf',
-		    'atf:bl31.elf',
 		    'dtb:system.dtb',
 		    'u-boot:u-boot.elf',
-		    'kernel:Image',
 		    'rootfs:rootfs.cpio.uboot',
 		]
+		if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp':
+			built_sources.extend(['kernel:Image', 'pmu:pmufw.elf', 'atf:bl31.elf'])
+		else:
+			built_sources.extend(['kernel:zImage'])
 		for builder, source in (x.split(':', 1) for x in built_sources):
 			base.import_source(STAGE, self.PATHS.respecialize(builder).output / source, source, quiet=True)
 
@@ -107,11 +121,15 @@ Stages available:
 				fd.write(
 				    textwrap.dedent(
 				        '''
-						sf read 0x00200000 0x{kernel_address[1]:08x} 0x{kernel_address[2]:08x};
-						sf read 0x04000000 0x{rootfs_address[1]:08x} 0x{rootfs_address[2]:08x};
-						booti 0x00200000 0x04000000 0x{dtb_address:08x}'''
-				    ).strip().
-				    format(kernel_address=kernel_address, rootfs_address=rootfs_address, dtb_address=dtb_address) + '\n'
+						sf read ${{kernel_addr_r}} 0x{kernel_address[1]:08x} 0x{kernel_address[2]:08x};
+						sf read ${{ramdisk_addr_r}} 0x{rootfs_address[1]:08x} 0x{rootfs_address[2]:08x};
+						{bootcmd} ${{kernel_addr_r}} ${{ramdisk_addr_r}} 0x{dtb_address:08x}'''
+				    ).strip().format(
+				        kernel_address=kernel_address,
+				        rootfs_address=rootfs_address,
+				        dtb_address=dtb_address,
+				        bootcmd='booti' if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp' else 'bootz',
+				    ) + '\n'
 				)
 
 		base.import_source(STAGE, 'system.xsa', 'system.xsa')
@@ -149,7 +167,7 @@ Stages available:
 		outputs = [
 		    ('BOOT.BIN', 'BOOT.BIN', 'boot'),
 		    ('boot.scr.ub', 'bootscr.ub', 'bootscr'),
-		    ('Image', 'kernel.bin', 'kernel'),
+		    ('Image' if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp' else 'zImage', 'kernel.bin', 'kernel'),
 		    ('rootfs.cpio.uboot', 'rootfs.ub', 'rootfs'),
 		]
 		for outputfn, file, _ in outputs:

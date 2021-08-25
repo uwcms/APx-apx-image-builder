@@ -195,19 +195,29 @@ class KernelBuilder(base.BaseBuilder):
 			with statefile as state:
 				state['tree_ready'] = True
 
-		if base.import_source(STAGE, 'kernel.config', self.PATHS.build / 'user.config', ignore_timestamps=True):
+		if base.import_source(STAGE, 'kernel.config', self.PATHS.build / 'user.config', optional=True,
+		                      ignore_timestamps=True):
 			# We need to use a two stage load here because we actually do update
 			# the imported source, and don't want needless imports to interfere
 			# with `make` caching.
-			user_config_hash = base.hash_file('sha256', open(self.PATHS.build / 'user.config', 'rb'))
-			if statefile.state.get('user_config_hash', '') != user_config_hash:
-				base.copyfile(self.PATHS.build / 'user.config', self.PATHS.build / 'linux/.config')
-				with statefile as state:
-					state['user_config_hash'] = user_config_hash
-					state['built_config_hash'] = None
+			# .config might not exist, if we're running defconfig.
+			if (self.PATHS.build / '.config').exists():
+				user_config_hash = base.hash_file('sha256', open(self.PATHS.build / 'user.config', 'rb'))
+				if statefile.state.get('user_config_hash', '') != user_config_hash:
+					base.copyfile(self.PATHS.build / 'user.config', self.PATHS.build / 'linux/.config')
+					with statefile as state:
+						state['user_config_hash'] = user_config_hash
+						state['built_config_hash'] = None
+			else:
+				(linuxdir / '.config').unlink(missing_ok=True)
+
+		# Fallback check required when the tree is regenerated with an unchanged config.
+		if (self.PATHS.build / 'user.config').exists() and not (linuxdir / '.config').exists():
+			base.copyfile(self.PATHS.build / 'user.config', linuxdir / '.config')
 
 		# Provide our kernel config as an output.
-		base.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config')
+		if (linuxdir / '.config').exists():
+			base.copyfile(linuxdir / '.config', self.PATHS.output / 'kernel.config')
 
 	def defconfig(self, STAGE: base.Stage) -> None:
 		linuxdir = self.PATHS.build / 'linux'
@@ -302,6 +312,9 @@ class KernelBuilder(base.BaseBuilder):
 	def build(self, STAGE: base.Stage) -> None:
 		linuxdir = self.PATHS.build / 'linux'
 
+		if not (linuxdir / '.config').exists():
+			base.fail(STAGE.logger, 'No kernel configuration file was found.  Use kernel:defconfig to generate one.')
+
 		for output in itertools.chain.from_iterable(
 		    self.PATHS.output.glob(x) for x in ('vmlinux', 'Image.gz', 'apx-kernel-*.rpm')):
 			STAGE.logger.debug('Removing pre-existing output ' + str(output))
@@ -318,15 +331,21 @@ class KernelBuilder(base.BaseBuilder):
 		except subprocess.CalledProcessError:
 			base.fail(STAGE.logger, 'Kernel `make` returned with an error')
 
-		# Provide Image as an output.
-		# We first have to ungzip it, becuase this is the only output we get
-		# from the linux build, but everything else needs it raw, right now.
-		base.copyfile(linuxdir / 'arch/arm64/boot/Image.gz', self.PATHS.build / 'Image.gz')
-		try:
-			base.run(STAGE, ['gunzip', '-f', 'Image.gz'], cwd=self.PATHS.build)
-		except subprocess.CalledProcessError:
-			base.fail(STAGE.logger, '`gunzip` returned with an error')
-		base.copyfile(self.PATHS.build / 'Image', self.PATHS.output / 'Image')
+		if self.target_arch == 'arm64':
+			# Provide Image as an output.
+			# We first have to ungzip it, becuase this is the only output we get
+			# from the linux build, but everything else needs it raw, right now.
+			base.copyfile(linuxdir / 'arch/arm64/boot/Image.gz', self.PATHS.build / 'Image.gz')
+			try:
+				base.run(STAGE, ['gunzip', '-f', 'Image.gz'], cwd=self.PATHS.build)
+			except subprocess.CalledProcessError:
+				base.fail(STAGE.logger, '`gunzip` returned with an error')
+			base.copyfile(self.PATHS.build / 'Image', self.PATHS.output / 'Image')
+		elif self.target_arch == 'arm':
+			# Provide zImage as an output. (This is a self-extracting image, not a gzipped image!)
+			base.copyfile(linuxdir / 'arch/arm/boot/zImage', self.PATHS.output / 'zImage')
+		else:
+			base.fail(STAGE.logger, f'Unknown target arch {self.target_arch!r}.  What type of output do we look for?')
 
 		STAGE.logger.info('Building kernel RPMs')
 		base.copyfile(self.PATHS.build / 'binkernel.spec', linuxdir / 'binkernel.spec')
