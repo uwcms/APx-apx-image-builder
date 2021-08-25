@@ -1,1 +1,0 @@
-../../sources/linux-boot.tcl
