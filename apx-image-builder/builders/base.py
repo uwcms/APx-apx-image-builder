@@ -375,18 +375,21 @@ def import_source(
 			if quiet is None:
 				quiet = True  # Default to quiet for these.
 			cachefile = PATHS.build / 'builtin-resource-{sourceid}.dat'.format(sourceid=sourceid)
-			if not cachefile.exists():
-				# Builtin resources don't change, so we won't check.
-				try:
-					import pkg_resources
-					data = pkg_resources.resource_string(parsed_sourceurl.netloc or __name__, parsed_sourceurl.path)
+			try:
+				import pkg_resources
+				data = pkg_resources.resource_string(parsed_sourceurl.netloc or __name__, parsed_sourceurl.path)
+				read_data: Optional[str] = None
+				if cachefile.exists():
+					with open(cachefile, 'rb') as fd:
+						fd.read()
+				if read_data is None or read_data != data:
 					with open(cachefile, 'wb') as fd:
 						fd.write(data)
-				except ImportError:
-					fail(
-					    LOGGER,
-					    'No supported package resource access module installed.  (install the `pkg_resources` python module)'
-					)
+			except ImportError:
+				fail(
+				    LOGGER,
+				    'No supported package resource access module installed.  (install the `pkg_resources` python module)'
+				)
 			source_url = cachefile
 		else:
 			if quiet is None:
