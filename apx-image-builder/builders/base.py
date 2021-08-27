@@ -270,15 +270,15 @@ def run(
 
 	if not check:
 		LOGGER.log(DETAIL_LOGLEVEL, f'Command finished with return status {ret!s}.')
-		LOGGER.log(DETAIL_LOGLEVEL, f'Output stored as {tmpoutfn}.')
+		LOGGER.log(DETAIL_LOGLEVEL, f'Output stored as {tmpoutfn}')
 	elif ret != 0:
 		LOGGER.log(ERROR_LOGLEVEL, f'Command failed with exit status {ret!s} for {cmdargs!r}.')
-		LOGGER.log(ERROR_LOGLEVEL, f'Output stored as {tmpoutfn}.')
+		LOGGER.log(ERROR_LOGLEVEL, f'Output stored as {tmpoutfn}')
 		if CHECK_RAISE:
 			raise subprocess.CalledProcessError(ret, proc.args, output=stdout, stderr='')
 	else:
 		LOGGER.log(DETAIL_LOGLEVEL, f'Command finished successfully.')
-		LOGGER.log(DETAIL_LOGLEVEL, f'Output stored as {tmpoutfn}.')
+		LOGGER.log(DETAIL_LOGLEVEL, f'Output stored as {tmpoutfn}')
 	return (ret, stdout)
 
 
