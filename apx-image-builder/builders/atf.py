@@ -29,6 +29,7 @@ class ATFBuilder(base.BaseBuilder):
 	def instantiate_stages(self) -> None:
 		super().instantiate_stages()
 		if self.COMMON_CONFIG.get('zynq_series', '') != 'zynqmp':
+			del self.STAGES['bypass']
 			return
 		self.STAGES['clean'] = base.BypassableStage(
 		    self, 'clean', self.check, self.clean, include_in_all=False, extract_bypass=False
