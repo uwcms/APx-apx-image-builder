@@ -151,17 +151,22 @@ class RPMBuilder(base.BaseBuilder):
 				STAGE.logger.info('Generating boot.scr automatically.')
 				with open(bootscr, 'w') as fd:
 					fd.write(
-						textwrap.dedent(
-							'''
+					    textwrap.dedent(
+					        '''
 							echo Loading kernel bootargs...
-							load $devtype ${{devnum}}:${{distro_bootpart}} $kernel_addr_r bootargs.scr
+							load $devtype ${{devnum}}:${{distro_bootpart}} $kernel_addr_r ${{prefix}}bootargs.scr
 							source $kernel_addr_r
 							echo Loading kernel...
-							load $devtype ${{devnum}}:${{distro_bootpart}} $kernel_addr_r vmlinuz
+							load $devtype ${{devnum}}:${{distro_bootpart}} $kernel_addr_r ${{prefix}}{kernel_filename}
 							echo Booting...
-							bootz $kernel_addr_r - 0x{dtb_address:08x}
+							{bootcmd} $kernel_addr_r - 0x{dtb_address:08x}
 							'''
-						).format(dtb_address=dtb_address)
+					    ).format(
+					        dtb_address=dtb_address,
+					        bootcmd='booti' if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp' else 'bootz',
+					        kernel_filename='vmlinux'
+					        if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp' else 'vmlinuz',
+					    )
 					)
 			STAGE.logger.info('Generating boot.scr FIT image')
 			try:
