@@ -25,7 +25,7 @@ class RPMBuilder(base.BaseBuilder):
 
 	def instantiate_stages(self) -> None:
 		super().instantiate_stages()
-		requirements: List[str] = ['fsbl:build', 'dtb:build', 'u-boot:build', 'kernel:build', 'rootfs:build']
+		requirements: List[str] = ['fsbl:build', 'dtb:build', 'u-boot:build', 'kernel:build']
 
 		if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp':
 			requirements.extend(['pmu:build', 'atf:build'])

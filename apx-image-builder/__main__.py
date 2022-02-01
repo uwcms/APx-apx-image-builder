@@ -115,11 +115,12 @@ BUILD_PATHS = BuildPaths(CONFIG['sources_directory'], CONFIG['build_directory'],
 
 # Now we can instantiate stages and prepare our actual argument parser.
 # This will replace the output of the previous so it must contain all of the previous's options.
-BUILDERS: Dict[str,
-               BaseBuilder] = {builder.NAME: builder(CONFIG, BUILD_PATHS, ARGS)
-                               for builder in builders.all_builders}
+BUILDERS: Dict[str, BaseBuilder] = {
+    builder.NAME: builder(CONFIG, BUILD_PATHS, ARGS)
+    for builder in builders.all_builders if builder.NAME not in CONFIG.get('disabled_builders', [])
+}
 STAGES: Dict[str, Dict[str, Stage]] = {}
-valid_stages: Set[str] = set()
+valid_stages: Set[str] = set(['ALL:ALL'])
 
 for builder in BUILDERS.values():
 	valid_stages.add('{builder.NAME}:ALL'.format(builder=builder))
@@ -261,6 +262,11 @@ def sequence_stages() -> List[Tuple[str, str]]:
 		stage = requested_stages.pop(0)
 		required_stages_set.add(stage)
 		for required_stage in stageset[stage].requires:
+			if required_stage not in stageset:
+				LOGGER.error(
+				    f'Stage {":".join(required_stage)}, required by {":".join(stage)}, is unavailable (disabled?).'
+				)
+				raise SystemExit(1)
 			if required_stage not in required_stages_set:
 				requested_stages.append(required_stage)
 

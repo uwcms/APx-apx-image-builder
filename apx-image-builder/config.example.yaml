@@ -33,6 +33,15 @@ output_directory: ./output
 # One of: 'zynq', 'zynqmp'
 zynq_series: zynqmp
 
+# Disabled builders
+# These builders will be entirely disabled, as if they were not installed.
+# If not defined, all included builders will be available.
+# This may result in dependency resolution failures.
+#disabled_builders:
+#  - rootfs
+#  - qspi
+#  - jtag
+
 # Builder-specific configuration.
 builders:
   fsbl:
