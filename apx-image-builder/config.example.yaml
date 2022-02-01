@@ -23,6 +23,14 @@ sources_directory: ./sources
 # Default: './build'
 build_directory: ./build
 
+# Fetch cache directory.
+# Any files that need to be retrieved from remote sources will be cached here.
+# WARNING: Cached files from remote sources are always assumed to be up to date.
+# WARNING: This will never be automatically cleaned.
+# WARNING: When creating this directory, a `CACHEDIR.TAG` file will be created
+#          to exclude this directory from backups.
+fetch_cache_directory: ./fetch
+
 # Output directory.
 # Subdirectories will be created for each builder.
 # WARNING: Subdirectories will be deleted by cleanup operations.

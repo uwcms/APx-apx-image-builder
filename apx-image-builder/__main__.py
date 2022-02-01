@@ -98,9 +98,11 @@ else:
 LOGGER.debug(f'working_directory: {str(CONFIG["working_directory"]) !r}')
 CONFIG['sources_directory'] = CONFIG['working_directory'] / CONFIG['sources_directory']
 CONFIG['build_directory'] = CONFIG['working_directory'] / CONFIG['build_directory']
+CONFIG['fetch_cache_directory'] = CONFIG['working_directory'] / CONFIG['fetch_cache_directory']
 CONFIG['output_directory'] = CONFIG['working_directory'] / CONFIG['output_directory']
 LOGGER.debug(f'sources_directory: {str(CONFIG["sources_directory"]) !r}')
 LOGGER.debug(f'build_directory: {str(CONFIG["build_directory"]) !r}')
+LOGGER.debug(f'fetch_cache_directory: {str(CONFIG["fetch_cache_directory"]) !r}')
 LOGGER.debug(f'output_directory: {str(CONFIG["output_directory"]) !r}')
 
 LOGGER.debug('Changing to working directory.')
@@ -111,7 +113,13 @@ except Exception as e:
 	raise SystemExit(1)
 
 LOGGER.debug('Initializing builders.')
-BUILD_PATHS = BuildPaths(CONFIG['sources_directory'], CONFIG['build_directory'], CONFIG['output_directory'], None)
+BUILD_PATHS = BuildPaths(
+    CONFIG['sources_directory'],
+    CONFIG['build_directory'],
+    CONFIG['output_directory'],
+    CONFIG['fetch_cache_directory'],
+    None,
+)
 
 # Now we can instantiate stages and prepare our actual argument parser.
 # This will replace the output of the previous so it must contain all of the previous's options.

@@ -1,9 +1,11 @@
 import argparse
+import base64
 import collections.abc
 import hashlib
 import json
 import logging
 import os
+import re
 import select
 import shutil
 import stat
@@ -25,8 +27,11 @@ class BuildPaths(object):
 	build: Path
 	output_root: Path
 	output: Path
+	fetch_cache: Path
 
-	def __init__(self, user_sources: Path, build_root: Path, output_root: Path, module: Optional[str]):
+	def __init__(
+	    self, user_sources: Path, build_root: Path, output_root: Path, fetch_cache: Path, module: Optional[str]
+	):
 		self.user_sources = user_sources
 		self.build_root = build_root
 		self.build = build_root
@@ -51,9 +56,24 @@ class BuildPaths(object):
 		if module is not None:
 			self.output = self.output_root / module
 			self.output.mkdir(parents=True, exist_ok=True)
+		self.fetch_cache = fetch_cache
+		self.fetch_cache.mkdir(parents=True, exist_ok=True)
+		if not self.fetch_cache.exists():
+			self.fetch_cache.mkdir(parents=True, exist_ok=True)
+			with open(self.fetch_cache / 'CACHEDIR.TAG', 'w') as fd:
+				fd.write(
+				    textwrap.dedent(
+				        '''
+						Signature: 8a477f597d28d172789f06886806bc55
+						# This file is a cache directory tag created by apx-image-builder.
+						# For information about cache directory tags, see:
+						#	http://bford.info/cachedir/
+						'''
+				    ).lstrip()
+				)
 
 	def respecialize(self, module: Optional[str]) -> 'BuildPaths':
-		return BuildPaths(self.user_sources, self.build_root, self.output_root, module)
+		return BuildPaths(self.user_sources, self.build_root, self.output_root, self.fetch_cache, module)
 
 
 class Stage(object):
@@ -346,11 +366,25 @@ def import_source(
 
 	if isinstance(source_url, str):
 		parsed_sourceurl = urllib.parse.urlparse(source_url)
-		sourceid = hashlib.new('sha256', source_url.encode('utf8')).hexdigest()
+
+		def filtercap(val: str, limit: int) -> str:
+			val = re.sub(r'[^A-Za-z0-9_.]', '-', val)
+			if len(val) > abs(limit) and limit >= 0:
+				val = val[:limit - 3] + '...'
+			if len(val) > abs(limit) and limit < 0:
+				val = '...' + val[limit + 3:]
+			return val
+
+		sourceid = filtercap(parsed_sourceurl.scheme, 12) if parsed_sourceurl.scheme else 'file'
+		if parsed_sourceurl.hostname is not None:
+			sourceid += '_' + filtercap(parsed_sourceurl.hostname, -32)
+		sourceid += '_' + filtercap(parsed_sourceurl.path.rsplit('/',1)[-1], 64)
+		sourceid += '_' + base64.urlsafe_b64encode(hashlib.new('sha256', source_url.encode('utf8')).digest()
+		                                           )[:12].decode('utf8')
 		if parsed_sourceurl.scheme in ('http', 'https', 'ftp'):
 			if quiet is None:
 				quiet = False  # Default to verbose, for these.
-			cachefile = PATHS.build / 'downloaded-source-{sourceid}.dat'.format(sourceid=sourceid)
+			cachefile = PATHS.fetch_cache / sourceid
 			if not cachefile.exists():
 				LOGGER.info(f'Downloading source file {comprehensible_source_url!s}')
 				try:
@@ -363,7 +397,7 @@ def import_source(
 					)
 				except Exception:
 					try:
-						cachefile.unlink()
+						Path(str(cachefile.resolve()) + '~').unlink()
 					except:
 						pass
 					fail(LOGGER, f'Unable to download source file {comprehensible_source_url!s}')
@@ -374,14 +408,14 @@ def import_source(
 		elif parsed_sourceurl.scheme == 'builtin':
 			if quiet is None:
 				quiet = True  # Default to quiet for these.
-			cachefile = PATHS.build / 'builtin-resource-{sourceid}.dat'.format(sourceid=sourceid)
+			cachefile = PATHS.fetch_cache / sourceid
 			try:
 				import pkg_resources
 				data = pkg_resources.resource_string(parsed_sourceurl.netloc or __name__, parsed_sourceurl.path)
-				read_data: Optional[str] = None
+				read_data: Optional[bytes] = None
 				if cachefile.exists():
 					with open(cachefile, 'rb') as fd:
-						fd.read()
+						read_data = fd.read()
 				if read_data is None or read_data != data:
 					with open(cachefile, 'wb') as fd:
 						fd.write(data)
