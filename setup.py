@@ -15,6 +15,6 @@ if plus_commits != '0':
 pep440_ver = tag_ver
 if add_buildstamp:
 	pep440_ver += '.' + plus_commits
-	pep440_ver += '.' + str(time.time())
+	pep440_ver += '.' + str(int(time.time()))
 
 setup(version=pep440_ver, packages=find_packages())
