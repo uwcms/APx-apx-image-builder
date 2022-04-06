@@ -4,12 +4,17 @@ import time
 from setuptools import find_packages, setup
 
 # We need to make the usual git describe PEP440 compatable.
-git_ver = subprocess.check_output(['git', 'describe']).decode('utf8').strip().lstrip('v')
-split_ver = git_ver.lstrip('v').replace('-', '.').split('.')
-if split_ver[-1].startswith('g'):
-	# Not a tagged release.
-	# Rather than keep the .gHASH, we'll use a build timestamp.
-	# This will cover dirty builds too.
-	split_ver[-1] = str(time.time())
-pep440_ver = '.'.join(split_ver)
+git_ver = subprocess.check_output(['git', 'describe', '--long', '--dirty']).decode('utf8').strip().lstrip('v')
+add_buildstamp = False
+if git_ver.endswith('-dirty'):
+	add_buildstamp = True
+	git_ver = git_ver[:-len('-dirty')]
+tag_ver, plus_commits, ghash = git_ver.rsplit('-', 2)
+if plus_commits != '0':
+	add_buildstamp = True
+pep440_ver = tag_ver
+if add_buildstamp:
+	pep440_ver += '.' + plus_commits
+	pep440_ver += '.' + str(time.time())
+
 setup(version=pep440_ver, packages=find_packages())
