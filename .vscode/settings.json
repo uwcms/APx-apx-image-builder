@@ -3,11 +3,15 @@
 	"editor.tabSize": 4,
 	"editor.insertSpaces": false,
 	"files.exclude": {
-		"**/test": true,
-		"**/test-*": true
+		"**/test/build": true,
+		"**/test/output": true,
+		"**/test-*/build": true,
+		"**/test-*/output": true
 	},
 	"files.watcherExclude": {
-		"**/test-*/**": true,
-		"**/test/**": true
+		"**/test/build/**": true,
+		"**/test/output/**": true,
+		"**/test-*/build/**": true,
+		"**/test-*/output/**": true,
 	},
 }
