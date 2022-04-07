@@ -12,7 +12,7 @@ if git_ver.endswith('-dirty'):
 tag_ver, plus_commits, ghash = git_ver.rsplit('-', 2)
 if plus_commits != '0':
 	add_buildstamp = True
-pep440_ver = tag_ver
+pep440_ver = tag_ver.replace('+','-') # Build tags are marked by - in setuptools.
 if add_buildstamp:
 	pep440_ver += '.' + plus_commits
 	pep440_ver += '.' + str(int(time.time()))
