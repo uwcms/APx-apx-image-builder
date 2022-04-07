@@ -179,6 +179,35 @@ builders:
     # They will be applied with `patch -tNp1`
     #patches: []
 
+  rpm:
+    # The name of the image to be used in naming the firmware RPM.
+    # Strongly Recommended: ${elm}-${blade} or ${elm}-${blade}-${majorbranch}
+    image_name: board-standard
+
+    # Firmware RPM core version.
+    # The build timestamp will be appended to this as the release number.
+    # Default: 1.0.0
+    #
+    # If you instead prefer to pull the RPM version string for your firmware
+    # information from git tags, set rpm_version to 'git'. The builder will run
+    # `git describe` and extract a valid semver from the end of the name of the
+    # matched tag, discarding any prefixes.  Roughly, the tag name must match
+    # ".*\bv?(?P<semver>...)".
+    #rpm_version: 1.0.0
+    #rpm_version: git
+
+    # When using rpm_version 'git', you may wish to match only specific tags, or
+    # provide different arguments to `git describe`.  `--long --dirty` are
+    # automatic and required.  Default: []
+    #rpm_version_git_describe_opts: ['--match', 'v*']
+
+    # The path to `cd` to for `git describe`, relative to `working_directory`
+    # configured above.
+    #rpm_version_chdir: ./
+
+    # You may wish to define your own RPM epoch (know what you're doing first).
+    #rpm_version_epoch: null
+
   jtag:
     # The address to load the dtb into in memory.
     # You should normally keep the default.

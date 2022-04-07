@@ -1,10 +1,13 @@
 import argparse
+import datetime
 import itertools
+import logging
 import re
 import shutil
 import subprocess
 import textwrap
 import time
+from pathlib import Path
 from typing import IO, Dict, List, Optional, Tuple
 
 from . import base
@@ -58,6 +61,11 @@ class RPMBuilder(base.BaseBuilder):
 		if not self.BUILDER_CONFIG.get('image_name', ''):
 			STAGE.logger.warning('You did not supply a value for the `image_name` option to the `rpm` builder.')
 			STAGE.logger.warning('The firmware RPM will not be generated!')
+		try:
+			self.generate_rpm_version(STAGE)
+		except base.StepFailedError as e:
+			STAGE.logger.error(str(e))
+			check_ok = False
 		return check_ok
 
 	def build(self, STAGE: base.Stage) -> None:
@@ -179,13 +187,14 @@ class RPMBuilder(base.BaseBuilder):
 			shutil.rmtree(rpmbuilddir, ignore_errors=True)
 			rpmbuilddir.mkdir()
 			STAGE.logger.info('Running rpmbuild...')
+			rpm_version, rpm_release = self.generate_rpm_version(STAGE)
 			try:
 				rpmcmd = [
 				    'rpmbuild',
 				    '--define=_topdir ' + str(rpmbuilddir),
 				    '--define=_builddir .',
-				    '--define=rpm_version ' + self.BUILDER_CONFIG.get('rpm_version', '1.0.0'),
-				    '--define=rpm_release ' + str(int(time.time())),
+				    '--define=rpm_version ' + rpm_version,
+				    '--define=rpm_release ' + rpm_release,
 				    '--define=imagename ' + image_name,
 				    '--target',
 				    'aarch64' if self.COMMON_CONFIG.get('zynq_series', '') == 'zynqmp' else 'armv7hl',
@@ -200,3 +209,81 @@ class RPMBuilder(base.BaseBuilder):
 			# Provide our rpms as an output. (for standard installation)
 			for file in self.PATHS.build.glob('rpmbuild/RPMS/*/*.rpm'):
 				base.copyfile(file, self.PATHS.output / file.name)
+
+	def generate_rpm_version(self, STAGE: base.Stage) -> Tuple[str, str]:
+		self.BUILDER_CONFIG.setdefault('rpm_version', '1.0.0')
+		buildstamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+
+		if self.BUILDER_CONFIG['rpm_version'] == 'git':
+			describe_cmd = ['git', 'describe', '--long', '--dirty'
+			                ] + self.BUILDER_CONFIG.get('rpm_version_git_describe_opts', [])
+			describe_cwd = Path(self.COMMON_CONFIG['working_directory']
+			                    ) / self.BUILDER_CONFIG.get('rpm_version_chdir', '.')
+			base.run(
+			    STAGE,
+			    describe_cmd,
+			)
+			try:
+				gitver = base.run(
+				    STAGE,
+				    describe_cmd,
+				    cwd=describe_cwd,
+				    DETAIL_LOGLEVEL=logging.NOTSET,
+				    OUTPUT_LOGLEVEL=logging.NOTSET
+				)[1].decode('utf8').strip()
+			except subprocess.CalledProcessError:
+				base.fail(STAGE.logger, f'Unable to retrieve git version information: {describe_cmd!r} failed.')
+
+			# (P<semver>...) section courtesy of semver.org.
+			semver_regex = r'\bv?(?P<semver>(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?)-(?P<pluscommits>[0-9]+)-g(?P<githash>[0-9a-f]+)(?P<dirty>-dirty)?$'
+
+			m = re.search(semver_regex, gitver)
+			if m is None:
+				base.fail(
+				    STAGE.logger,
+				    f'Unable to parse `git describe` output {gitver!r}.  Does your tag end with a Semantic Version (https:/semver.org)?'
+				)
+			m.group('semver')
+
+			version: Dict[str, str] = {
+			    'major': '',
+			    'minor': '',
+			    'patch': '',
+			    'prerelease': '',
+			    'buildmetadata': '',
+			    'pluscommits': '',
+			    'githash': '',
+			    'dirty': '',
+			}
+			version.update({k: v or '' for k, v in m.groupdict().items()})
+
+			# Now we have the pieces but we need to get it into a RPM-compatible
+			# form, which means tweaking the 'prerelease' and 'buildmetadata'
+			# fields.
+			#
+			# Additionally, if the build is untagged or dirty, we'll add the
+			# extra information git-describe --long provides.
+
+			semver = '{major}.{minor}.{patch}'.format(**version)
+			rpm_release = '1'
+			if version['prerelease']:
+				# We have to use '.' because '-' is reserved in RPM land.
+				semver += '.' + version['prerelease']
+			if version['buildmetadata']:
+				# We'll put any build metadata in our actual build metadata.
+				rpm_release = version['buildmetadata'].replace('.', '_').replace('-', '_')
+			if int(version['pluscommits']) > 0 or version['dirty']:
+				semver += '_' + version['pluscommits']
+				semver += '.1' if version['dirty'] else '.0'
+			rpm_release += '.' + buildstamp + '.g' + version['githash']
+
+			self.BUILDER_CONFIG['rpm_version'] = semver
+			self.BUILDER_CONFIG['rpm_release'] = rpm_release
+		elif 'rpm_release' not in self.BUILDER_CONFIG:
+			self.BUILDER_CONFIG['rpm_release'] = buildstamp
+
+		if self.BUILDER_CONFIG.get('rpm_version_epoch', None) and ':' not in self.BUILDER_CONFIG['rpm_version']:
+			self.BUILDER_CONFIG['rpm_version'
+			                    ] = self.BUILDER_CONFIG['rpm_version_epoch'] + ':' + self.BUILDER_CONFIG['rpm_version']
+
+		return self.BUILDER_CONFIG['rpm_version'], self.BUILDER_CONFIG['rpm_release']
