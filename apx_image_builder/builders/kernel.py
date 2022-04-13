@@ -209,7 +209,10 @@ class KernelBuilder(base.BaseBuilder):
 						state['user_config_hash'] = user_config_hash
 						state['built_config_hash'] = None
 			else:
-				(linuxdir / '.config').unlink(missing_ok=True)
+				try:
+					(linuxdir / '.config').unlink()
+				except Exception:
+					pass
 
 		# Fallback check required when the tree is regenerated with an unchanged config.
 		if (self.PATHS.build / 'user.config').exists() and not (linuxdir / '.config').exists():

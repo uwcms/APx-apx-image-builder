@@ -445,7 +445,10 @@ def import_source(
 			if not quiet:
 				LOGGER.info(f'Importing optional source file {comprehensible_source_url!s} as missing.')
 			target_exists = target.exists()
-			target.unlink(missing_ok=True)
+			try:
+				target.unlink()
+			except Exception:
+				pass
 			return target_exists
 
 	changed = False

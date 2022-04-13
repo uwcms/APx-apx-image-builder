@@ -106,7 +106,10 @@ class RootfsBuilder(base.BaseBuilder):
 					with statefile as state:
 						state['user_config_hash'] = user_config_hash
 			else:
-				(brdir / '.config').unlink(missing_ok=True)
+				try:
+					(brdir / '.config').unlink()
+				except Exception:
+					pass
 
 		# Fallback check required when the tree is regenerated with an unchanged config.
 		if (self.PATHS.build / '.config').exists() and not (brdir / '.config').exists():
