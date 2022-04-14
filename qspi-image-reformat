@@ -1,0 +1,138 @@
+#!/usr/bin/python3
+
+import argparse
+import os
+import re
+from pathlib import Path
+import sys
+from typing import IO, List, NamedTuple, Tuple, cast
+
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "-s",
+    "--source-mtd",
+    type=argparse.FileType('r'),
+    required=True,
+    help="The /proc/mtd matching the provided image files."
+)
+parser.add_argument(
+    "-d",
+    "--dest-mtd",
+    type=argparse.FileType('r'),
+    required=True,
+    help="The /proc/mtd matching the destination system.  WARNING: These partitions must be contiguous and start at 0x0."
+)
+parser.add_argument(
+    "-i",
+    "--image-file",
+    action="append",
+    default=[],
+    required=True,
+    help="Specify an image file (call multiple times, in order) (use empty string for unused source partitions)."
+)
+parser.add_argument(
+    "-o", "--output", required=True, help="The directory in which to write the output image files and flash script."
+)
+ARGS = parser.parse_args()
+
+
+class MTDPart(NamedTuple):
+	dev: str
+	start: int
+	size: int
+	name: str
+
+	def __repr__(self) -> str:
+		return 'MTDPart(dev={:s}, start=0x{:08x}, size=0x{:08x}, name={:s})'.format(
+		    repr(self.dev), self.start, self.size, repr(self.name)
+		)
+
+
+def parse_mtd(mtdfd: IO[str]) -> List[MTDPart]:
+	# dev:    size   erasesize  name
+	# mtd0: 01000000 00001000 "boot"
+	# mtd1: 00020000 00001000 "bootenv"
+	# mtd2: 01000000 00001000 "kernel"
+	# mtd3: 01fe0000 00001000 "spare"
+	parts: List[MTDPart] = []
+	current_offset = 0
+	for line in mtdfd:
+		m = re.match(r'(?P<dev>[^:]+): (?P<size>[0-9a-f]+) (?P<erasesize>[0-9a-f]+) "(?P<name>.*)"', line, re.I)
+		if m is None:
+			continue  # header line probably.
+		mtdsize = int(m.group('size'), 16)
+		parts.append(MTDPart(m.group('dev'), current_offset, mtdsize, m.group('name')))
+		current_offset += mtdsize
+	return parts
+
+
+srcmtd = parse_mtd(ARGS.source_mtd)
+dstmtd = parse_mtd(ARGS.dest_mtd)
+
+print('Source partition scheme (matching image files):')
+for mtd in srcmtd:
+	print(mtd)
+print()
+print('Destination partition scheme (matching target system):')
+for mtd in dstmtd:
+	print(mtd)
+print()
+
+outdir = Path(ARGS.output)
+try:
+	outdir.mkdir(exist_ok=True)
+except FileExistsError as e:
+	print('Unable to create output directory: ' + str(e), file=sys.stderr)
+	raise SystemExit(1)
+
+vflash = bytearray(srcmtd[-1].start + srcmtd[-1].size)
+vflash_allocations: List[Tuple[int, int]] = []
+
+imgparts = list(srcmtd)
+for image_file in ARGS.image_file:
+	part = imgparts.pop(0)
+	if not image_file:
+		continue  # A skipped partition
+	try:
+		image = open(image_file, 'rb')
+	except Exception as e:
+		print(f'Unable to open {image_file!r}: {e!s}', file=sys.stderr)
+		raise SystemExit(1)
+	imgdata = image.read()
+	if len(imgdata) > part.size:
+		print(f'Invalid image!  {image_file!r} cannot fit in destination {part!r}', file=sys.stderr)
+		raise SystemExit(1)
+	vflash[part.start:part.start + len(imgdata)] = imgdata
+	vflash_allocations.append((part.start, part.start + len(imgdata)))
+
+
+def part_trim_end_by_alloc(part_start: int, part_end: int) -> int:
+	new_end = part_start
+	for alloc_start, alloc_end in vflash_allocations:
+		if alloc_start >= part_end:
+			continue  # This alloc is after the current partition
+		new_end = max(new_end, alloc_end)
+	return min(new_end, part_end)
+
+
+flashsh = '#!/bin/sh\n'
+for part in dstmtd:
+	alloc_end = part_trim_end_by_alloc(part.start, part.start + part.size)
+	if part.start == alloc_end:
+		flashsh += f'echo "Partition {part.dev} ({part.name}) is unused."\n'
+	else:
+		flashsh += f'echo "Flashing partition {part.dev} ({part.name})..."\n'
+		pfn = f'{part.dev}.{re.sub(r"[^a-zA-Z0-9]","_",part.name[:16]).rstrip("_")}.img'
+		flashsh += f'flashcp -v "{pfn}" "/dev/{part.dev}" || exit 1\n'
+		with open(outdir / pfn, 'wb') as fd:
+			fd.write(vflash[part.start:alloc_end])
+	flashsh += f'echo\n'
+
+flashsh += 'echo "Done."\n'
+
+flashshf = outdir / 'flash.sh'
+with open(flashshf, 'w') as fd:
+	fd.write(flashsh)
+flashshf.chmod(0o755)
+
+print(f'New flash images generated.  See {str(outdir)!r}')
